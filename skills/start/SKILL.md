@@ -4,23 +4,37 @@ description: Use whenever the user wants to build, extend, change, or plan a Dat
 ---
 # Building with DataSQRL
 
-DataSQRL projects are built by a **containerized code agent**, not by you directly. Your job is to
-get the user to a good requirements document, drive the agent through plan and implement, and
-report what happened. The agent has the SQRL compiler, the DataSQRL skill library, a test runner
-and a panel of reviewing judges. You have none of those.
+DataSQRL projects are built by a **containerized code agent**, not by you directly. The agent has
+the SQRL compiler, the DataSQRL skill library, a test runner and reviewing judges. Your job is to set up, route to the right lane, drive the agent, and report what
+happened.
 
-## The one rule
+There are two lanes, and this skill takes them in order:
+
+| | Step 1 · Setup | Step 2 · Route | Step 3 · Run |
+|---|---|---|---|
+| **Lane A — Patch** | image + git location | small, fully-determined change | one `patch` run |
+| **Lane B — Full workflow** | image + git location | anything that needs designing | `requirements` (optional-depending on the user request/requirements) → `plan` → `implement` |
+
+## The one rule (both lanes)
 
 **Never write DataSQRL project files yourself.** Not `.sqrl` scripts, not `*-package.json`, not
 GraphQL schemas or operations, not connector configs, not test files or snapshots.
+You are just the orchestrator layer calling necessary agent or running necessary commands by interacting with user if necessary.
 
 If you write them, they are unreviewed and uncompiled, and the agent will have to reconcile your
-guesses with its own work on the next run. Writing a requirements document is your job. Writing the
-implementation is not.
+guesses with its own work on the next run.
 
-The single exception: `adr/requirements_<ts>.md`, which the `requirements` skill writes.
+The single exception is `adr/requirements_<ts>.md` in **Lane B**, written by the `requirements`
+skill. In Lane A you write nothing at all — the container persists the request itself.
 
-## Make sure the agent image is here
+This applies to empty directories too. The agent creates a new project from scratch, so there is
+nothing to scaffold by hand — no starter `.sqrl` file, no package config, no directory layout.
+
+---
+
+# Step 1 — Setup (always, before routing)
+
+## 1a. Make sure the agent image is here
 
 Run this once, at the start. It does nothing when the image is already present:
 
@@ -33,7 +47,7 @@ fi
 ```
 
 **Do not ask permission first, and do not report success.** This is setup for something the user
-needed. 
+needed.
 
 ### If it fails
 
@@ -53,8 +67,7 @@ For a denied pull:
 > echo "$GITHUB_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
 > ```
 
-
-## Know where you are, before anything else
+## 1b. Know where you are
 
 Run these two commands from the directory the user wants to build in, and **nothing else**:
 
@@ -87,8 +100,7 @@ No repository means no run can start. Creating one changes the user's filesystem
 
 > There is no git repository here. Shall I run `git init` in `<absolute path of cwd>`?
 
-The current directory is the right default; offer the parent instead if the user doesn't specify a path and only says they have a sibling project or shared data catalog this project must read, since those have to live in the
-same repository.
+The current directory is the right default; offer the parent instead if the user doesn't specify a path and only says they have a sibling project or shared data catalog this project must read, since those have to live in the same repository.
 
 ### What this means for the run
 
@@ -97,7 +109,60 @@ files. **Launching from the repository root makes the whole repository writable;
 subdirectory, only that project is**, and everything else is mounted read-only for reference. So if
 the user has sibling projects they care about, launching from the project subdirectory is safer.
 
-## The workflow
+---
+
+# Step 2 — Route: does this need designing, or is it a patch?
+
+Picking the right lane matters more than anything else on this page.
+
+**Lane A (patch) vs Lane B (the full workflow)** Lane A is for a well-defined change that doesn't require designing, refactoring or major update where the request itself determines what to do, and the work left is applying it, updating the tests and documentation it affects, running the tests and repairing what it breaks. Lane B is for everything more complex. Running the full workflow over a patch-sized change spends a planning round and a long implementation run on a change that was already decided.
+
+**An existing project is a precondition for Lane A, not a reason to choose it.** Depending on the user requests or changes need to be done to an existing project might still need designing.
+
+**Choose Lane A (patch) only when all of these hold:**
+
+- the project already exists
+- the request fully determines the change
+- it touches a handful of existing files at most
+
+Typical examples for Lane A (patch work): 
+- adjusting a time window or watermark, 
+- renaming a field, 
+- changing a setting on an existing connector, 
+- adding a test case, or reconciling tests and docs after the user hand-edited a `.sqrl` file.
+
+**Choose Lane B (full workflow) when any of these holds:**
+
+- there are no `.sqrl` files yet
+- a new sub-project or deployment (another `*-package.json` / test package)
+- substantial new logic
+- the user supplied payloads, a spec, a ticket, or acceptance criteria — that material has to be carried into a plan verbatim
+- the request leaves anything open that you would otherwise decide on the user's behalf
+- they asked for a plan
+
+Deciding between them:
+
+- **One Lane B signal is enough.** It outweighs any number of Lane A signals.
+- **Ask only if you cannot decide without the user** — one line, stating your default. When the call is clear, route without asking.
+
+---
+
+# Step 3, Lane A — Patch (one run, no planning)
+
+Use the `patch` skill. That is the entire lane.
+
+**Do not invoke the `requirements` skill**: producing a requirements document.
+
+**There is no requirements stage and no plan stage here**, and therefore no review gate before the
+run. The request *is* the requirement: the agent goes straight to implementing, compiling and testing. Do not invoke `requirements` or `plan` first.
+
+Pass the user's request as a single quoted string as is since the container cannot see this conversation.
+
+When the run finishes, report the result and stop — see **After any agent run** below.
+
+---
+
+# Step 3, Lane B — Full workflow
 
 | Stage | Who does it | Skill |
 |-------|-------------|-------|
@@ -106,12 +171,11 @@ the user has sibling projects they care about, launching from the project subdir
 | 3. Plan | containerized agent | `plan` |
 | 4. **Review the plan** | **the user** | — |
 | 5. Implement | containerized agent | `implement` |
-| 6. Check on a run | either | `status` |
 
 **Both review stages belong to the user.** Each is a stop, not a formality — you wait for an answer
 before moving on.
 
-### Never end a stage silently
+## Never end a stage silently
 
 Every stage ends one of two ways: with a **question you need answered**, or with an **offer to run
 the next stage**. Never with a dead stop that leaves the user guessing what to type.
@@ -131,35 +195,30 @@ Two limits, both of which matter more than the offer itself:
   to look into it?". A failure the containerized agent reports is a finished result, and offering
   to chase it is how a clean handoff turns into an unbounded debugging session.
 
-In Claude Code these are `/datasqrl:requirements`, `/datasqrl:plan`, `/datasqrl:implement`,
-`/datasqrl:status`. You can also invoke them directly as skills when the user's intent is clear.
-
-### 1. Requirements, and 2. their review
+## 1. Requirements, and 2. their review
 
 Unless the user already has a requirements document, start here. Use the `requirements` skill.
 
-Do not skip this because the request sounds simple. Planning mode fills every gap with an
-assumption and records it; thin requirements do not fail loudly, they produce a confident plan
-built on guesses.
+Do not skip this because the request sounds simple. Planning mode fills every gap with an assumption and records it; thin requirements do not fail loudly, they produce a confident plan built on guesses.
 
 That skill ends by listing the open questions and asking the user to review the document. Wait for
 their answer — their confirmation is what the `plan` skill treats as approval to proceed. If they
 answer open questions in the chat rather than the file, put the answers in the file first; the
 planner cannot see this conversation.
 
-### 3. Plan
+## 3. Plan
 
 Use the `plan` skill. It writes `adr/plan_<ts>.md` — a reviewable, checkbox-tracked plan — and
 summarizes it. It does not change any project code.
 
-### 4. Review the plan — this stage belongs to the user
+## 4. Review the plan — this stage belongs to the user
 
 Stop and let them read the plan, especially its `## Assumptions` (high-impact ones are tagged) and
 its `## Implementation Checklist`. They may edit the file directly before implementing.
 
 Do not critique the plan, rewrite it, or move past this stage on your own initiative.
 
-### 5. Implement
+## 5. Implement
 
 Use the `implement` skill, but only once **all three** of these hold:
 
@@ -173,19 +232,15 @@ If any of the three is missing, say which one, name the command, and stop.
 This matters because implementation is a 30-60+ minute containerized run that rewrites project
 files. Getting it wrong wastes real time and money.
 
-### 6. Status
+---
 
-`status` reports an in-flight run or the last result, from any session at any time.
-
+# Both lanes
 
 ## After any agent run
 
-The containerized agent runs its own compile → test → judge → refine loop. A failure it reports is
-a **finished result**, not a task handed to you. Do not debug it, do not "fix" the generated code,
-and do not propose follow-up work. Report the outcome and stop.
+The containerized agent runs its own compile → test → refine loop (plus judges in Lane B). A failure it reports is a **finished result**, not a task handed to you. Do not debug it, do not "fix" the generated code, and do not propose follow-up work. Report the outcome and stop.
 
-## If the project does not exist yet
+## Checking on a run
 
-The agent creates a new DataSQRL project in an empty directory. There is nothing to scaffold by
-hand — do not create `.sqrl` files, a package config, or a directory layout to "get started". Just
-confirm the git location as above and run the workflow.
+`status` reports an in-flight run or the last result, from any session at any time — including one
+that did not start the run.

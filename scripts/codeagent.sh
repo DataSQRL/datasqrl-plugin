@@ -438,6 +438,7 @@ if [ ${#FORWARD_ARGS[@]} -eq 0 ] || ! printf '%s\n' "${FORWARD_ARGS[@]}" | grep 
         echo "  ./codeagent.sh requirements.md                    # plan from file"
         echo "  ./codeagent.sh --mode implementation              # implement from latest ADR"
         echo "  ./codeagent.sh my_adr.md --mode implementation    # implement from specific ADR"
+        echo "  ./codeagent.sh \"widen the window\" --mode patch    # small change, no planning"
         exit 1
     fi
 fi
@@ -454,6 +455,20 @@ for _a in "${FORWARD_ARGS[@]}"; do
     esac
 done
 [ -z "$RUN_MODE" ] && RUN_MODE="agent"
+
+# Patch mode is defined by its request: there is nothing to resume and nothing to auto-discover.
+# Left to discovery it would pick up the newest adr/ file — most often a plan — and run that with
+# none of the machinery a plan needs. The Python CLI refuses this too, but only once the container
+# is up; with --detach that failure lands after the launcher has already printed a run name, so
+# catch it here while the user is still looking at the terminal.
+if [ "$RUN_MODE" = "patch" ] && [ -z "$REQUIREMENTS" ]; then
+    echo "Error: patch mode requires a request describing the change." >&2
+    echo "" >&2
+    echo "Usage:" >&2
+    echo "  ./codeagent.sh \"widen the aggregation window to 2 hours\" --mode patch" >&2
+    echo "  ./codeagent.sh change-notes.md --mode patch" >&2
+    exit 1
+fi
 
 # --- Preflight ---------------------------------------------------------------------------------
 # Everything that can fail before the container exists is checked HERE, synchronously, so a

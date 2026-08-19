@@ -12,6 +12,9 @@ You describe what you want in plain English. Your agent turns that into a proper
 document, hands it to the containerized DataSQRL agent to plan, waits for you to review the plan,
 then runs the autonomous implement → compile → test → verify → refine loop.
 
+For a small change to a project that already exists, that whole workflow is overkill — `patch`
+sends the request straight to the implementing agent instead.
+
 Your agent never writes SQRL itself — the container has the compiler, the DataSQRL skill library,
 the test runner and the reviewing judges.
 
@@ -21,6 +24,7 @@ the test runner and the reviewing judges.
 | `requirements` | `/datasqrl:requirements` | Gathers and writes `adr/requirements_<ts>.md`. |
 | `plan` | `/datasqrl:plan` | Planning run → reviewable, checkbox-tracked `adr/plan_<ts>.md`. |
 | `implement` | `/datasqrl:implement` | The full autonomous loop over an approved plan. |
+| `patch` | `/datasqrl:patch` | A small change to an existing project: no planning, no judges, but it still runs and fixes the tests. |
 | `status` | `/datasqrl:status` | What the current run is doing, or the last result. |
 
 Deploying to DataSQRL Cloud is not covered by these skills.
