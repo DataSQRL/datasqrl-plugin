@@ -45,7 +45,7 @@
 #                                                   place — nothing else can be modified)
 #
 # Because the repo's directory structure is preserved verbatim, every relative path the agent
-# writes (e.g. "script.shared": {"path": "../data-catalog"}) is equally valid in your real repo.
+# writes (e.g. "script.include": {"data_catalog": {"package": "../data-catalog/package.json"}}) is equally valid in your real repo.
 # Invoked at the repo root, the project IS the repo and a single read-write mount is used.
 #
 # Set CODEAGENT_ALLOW_NO_GIT=1 to bypass the git requirement (CI/automation only); the current

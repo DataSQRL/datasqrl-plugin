@@ -1,41 +1,16 @@
 ---
 name: implement
-description: Use when the user has reviewed a DataSQRL plan and explicitly approved implementing it - for example by saying it looks good, to go ahead, or to implement it. Runs the DataSQRL Code Agent in implementation mode over that plan, the full autonomous implement, compile, test, verify and refine loop. Requires an existing adr/plan_*.md that was summarized to the user in this conversation; takes an optional path to a specific plan.
+description: Use when the user has reviewed a DataSQRL plan and explicitly approved implementing it - for example by saying it looks good, to go ahead, or to implement it. Runs the DataSQRL Code Agent in implementation mode over that plan, the full autonomous implement, compile, test, verify and refine loop.
 argument-hint: "[optional path to a plan_*.md]"
 allowed-tools: Bash, Monitor, Read
 ---
-Run the DataSQRL Code Agent in **implementation** mode (implement → compile → test → verify →
-refine) on the current project.
+Run the DataSQRL Code Agent in **implementation** mode (implement → compile → test → verify → refine) on the current project.
 
-**Working directory:** run everything below from the **project** directory. `codeagent.sh` derives
-the project and its mounts from the current directory (`git rev-parse --show-prefix`), so launching
-from the repository root instead treats the whole repo as one project, makes the entire repo
-writable, and auto-discovers `adr/plan_*.md` at the repo root rather than in your project.
-
-## Preconditions — check all three before running anything
-
-1. An `adr/plan_*.md` exists.
-2. Its summary was shown to the user **in this conversation**.
-3. The user **explicitly approved implementing**, in their own words.
-
-**"Build me a DataSQRL pipeline" is approval to start the workflow, not approval to implement.**
-
-If any precondition is unmet, say which one, name the next command, and stop. This is a 30-60+
-minute run that rewrites project files; starting it on a plan nobody read wastes real time and
-money.
-
-**The run and the command that starts it are two different things.** Keep them apart:
-
-- **The run** is a 30-60+ minute container — far longer than any command you are allowed to hold
-  open. It is therefore **detached**, owned by the Docker daemon rather than this session, and
-  keeps going if this session is interrupted or closed.
-- **The launch command** in step 1 is not the run. It only *starts* the container and exits, in
-  about two seconds, printing the run name.
-
-So the launch is an ordinary, fast, foreground command. There is nothing to wait on: do not wrap it
-in a background shell, do not raise its timeout, and never launch it twice.
+**Working directory**: run `codeagent.sh` in the project directory — the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to. `adr/plan_*.md` is discovered relative to that directory.
 
 ## Step 1 — start the run
+
+The launch command starts a detached container and returns in about two seconds, printing the run name. Launch once, in the foreground, with the default timeout. The container is owned by the Docker daemon and keeps running after this session is interrupted or closed.
 
 ```bash
 CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
@@ -44,16 +19,10 @@ CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
 bash "$CODEAGENT" "$ARGUMENTS" --mode implementation --detach
 ```
 
-Run this normally, in the foreground, with the default timeout. It returns in about two seconds and
-prints one line — the run name. Seeing that line means the container **started**, not that the
-implementation has finished.
-
-- With no argument it auto-discovers the latest `adr/plan_*.md`. Pass a path to target a specific
-  plan.
-- **Run the first two lines exactly as written.** They locate the launcher (codeagent.sh script).
-- A **non-zero exit means the run never started** — failed preflight (Docker down, image missing,
-  no credential) or a run already in progress for this project. Report that message verbatim and
-  stop. Do not retry, do not work around it, do not go to step 2.
+- **Run the first two lines exactly as written.** They locate the launche (`codeagent.sh`).
+- With no argument the launcher auto-discovers the latest `adr/plan_*.md`. Pass a path to target a specific plan.
+- The printed run name confirms the container **started**. Completion is signalled by the terminal event in step 2.
+- A non-zero exit means the run never started — failed preflight (Docker down, image missing, no credential), or a run already in progress for this project. Report that message verbatim and end the turn.
 
 ## Step 2 — watch it
 
@@ -64,31 +33,14 @@ watch:
 bash "$CODEAGENT" --watch
 ```
 
-It prints one short progress line per milestone and exits on its own at a terminal state, so the
-watcher ends itself — do not set a timeout or stop it early.
+It prints one short progress line per milestone and exits on its own at a terminal state, so the watcher ends itself — do not set a timeout or stop it early.
 
-If your agent has no such facility, say the run is underway and can be checked with the `status`
-skill.
+If your agent has no such facility, say the run is underway and can be checked with the [`status` skill](../status/SKILL.md).
 
-Either way: tell the user in one sentence that the run is underway and that they can close this
-session without stopping it. **End your turn there.** Do not poll, sleep, or re-run anything while
-it works.
+Either way: tell the user in one sentence that the run is underway and that they can close this session without stopping it, then end your turn. The container keeps working while this sessio sits idle.
 
 ## Step 3 — when the run finishes
 
-The last event is terminal (`Finished · …` or `Error · …`). Only then:
-
-1. Read `.code_agent_results.json` and summarize it: success, mode, scenario, refinements, issue
-   score/count. If the file is missing, say so and quote the last event instead. **That summary is
-   the entire deliverable — then stop.**
-2. Do **not** ask a follow-up question. Not "should I fix this?", not "want me to look into the
-   failure?", not "shall I re-run?".
-3. Do **not** inspect the project: no `.sqrl`/`.json`/GraphQL/test files, no `git diff`/
-   `git status`/`ls`/`grep`, no opening the plan or `build/`, no logs.
-4. Do **not** review, critique, verify, or debug the implementation. The containerized agent
-   already ran its own compile → test → judge → refine loop; **a failure it reports is a finished
-   result, not a task handed to you.**
-5. Do **not** propose follow-up work, fixes, or next steps, and do **not** edit any file.
-
-These rules apply to every outcome: success, judge rejection, compile/test failure, or error.
-There is no case in which you investigate.
+The last event is terminal (`Finished · …` or `Error · …`). Read `.code_agent_results.json` and report success, mode, scenario, refinements, and issue score/count. If the file is absent, quote the last event instead.
+That report is the complete deliverable, for every outcome. Stop after the report.
+The containerized agent has already run its own compile → test → judge → refine loop, so the result it returns is final and every change it made is already applied.
