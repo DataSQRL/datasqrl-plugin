@@ -2,7 +2,7 @@
 name: implement
 description: Use when the user has reviewed a DataSQRL plan and explicitly approved implementing it - for example by saying it looks good, to go ahead, or to implement it. Runs the DataSQRL Code Agent in implementation mode over that plan, the full autonomous implement, compile, test, verify and refine loop.
 argument-hint: "[optional path to a plan_*.md]"
-allowed-tools: Bash, Monitor, Read
+allowed-tools: Bash, Read, Skill
 ---
 Run the DataSQRL Code Agent in **implementation** mode (implement → compile → test → verify → refine) on the current project.
 
@@ -21,26 +21,39 @@ bash "$CODEAGENT" "$ARGUMENTS" --mode implementation --detach
 
 - **Run the first two lines exactly as written.** They locate the launche (`codeagent.sh`).
 - With no argument the launcher auto-discovers the latest `adr/plan_*.md`. Pass a path to target a specific plan.
-- The printed run name confirms the container **started**. Completion is signalled by the terminal event in step 2.
+- The printed run name confirms the container **started**.
 - A non-zero exit means the run never started — failed preflight (Docker down, image missing, no credential), or a run already in progress for this project. Report that message verbatim and end the turn.
 
-## Step 2 — watch it
+## Step 2 — start the background wait
 
-If your agent can watch a background command (Claude Code: the `Monitor` tool, `persistent: true`),
-watch:
+Start this command **in the background**, with the longest timeout you can set:
 
 ```bash
-bash "$CODEAGENT" --watch
+bash "$CODEAGENT" --wait
 ```
 
-It prints one short progress line per milestone and exits on its own at a terminal state, so the watcher ends itself — do not set a timeout or stop it early.
+It waits until the run ends and then prints one line with the result. Because it runs in the background, you get a notice when it ends, and the user does not have to ask you. If you cannot run a command in the background, skip this step; the user will ask you how the run went.
 
-If your agent has no such facility, say the run is underway and can be checked with the [`status` skill](../status/SKILL.md).
+## Step 3 — inform the user, then end your turn
 
-Either way: tell the user in one sentence that the run is underway and that they can close this session without stopping it, then end your turn. The container keeps working while this sessio sits idle.
+Write this message after the background command has started, as the last message of the turn, so the user sees it in full (text written before a command call can be hidden by the user's interface). The message contains, in full:
 
-## Step 3 — when the run finishes
+- the run name the launch printed;
+- the block of commands the launch printed under the run name, copied word for word — each line is an action the user can take from a terminal;
+- that the user can ask you at any time how the run is going or what a progress line means (the [`progress` skill](../progress/SKILL.md) answers that), and can ask you to stop the run;
+- that the container keeps working while this session sits idle;
+- that you will report when the run ends (only when the background wait is running).
 
-The last event is terminal (`Finished · …` or `Error · …`). Read `.code_agent_results.json` and report success, mode, scenario, refinements, and issue score/count. If the file is absent, quote the last event instead.
+Then end your turn.
+
+## Step 4 — when the background `--wait` stops because of the timeout
+
+The run is still going. Start the same `--wait` command again in the background and end your turn.
+
+## Step 5 — when the run finishes
+
+Do this when the background `--wait` ends with the line `No run in progress. Last result: …`, or when the user asks you how the run went (the [`progress` skill](../progress/SKILL.md) tells you whether it has finished) and it shows that the run finished.
+
+Read `.code_agent_results.json` and report success, mode, refinements, and issue score/count. If the file is absent, say so.
 That report is the complete deliverable, for every outcome. Stop after the report.
 The containerized agent has already run its own compile → test → judge → refine loop, so the result it returns is final and every change it made is already applied.

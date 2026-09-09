@@ -9,7 +9,7 @@
 #   ./install-skills.sh [target-repo]        # defaults to the current directory
 #
 # Copies:
-#   <target>/.github/skills/<skill>/         the six DataSQRL skills
+#   <target>/.github/skills/<skill>/         the DataSQRL skills
 #   <target>/.agents/skills/<skill>/         same skills, for agents that read this location
 #
 # The launcher itself is NOT copied — it must be on PATH. See "Requirements" below.

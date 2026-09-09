@@ -2,7 +2,7 @@
 name: plan
 description: Use when DataSQRL requirements exist and the next step is a plan, or when the user asks to plan a DataSQRL pipeline or data catalog. Runs the DataSQRL Code Agent in planning mode over a requirements document or a requirements string, producing a reviewable, checkbox-tracked adr/plan_<ts>.md. Takes an optional path to a requirements .md, or inline requirements text.
 argument-hint: <requirements text | path to a requirements .md>
-allowed-tools: Bash, Monitor, Read, Skill
+allowed-tools: Bash, Read, Skill
 ---
 Run the DataSQRL Code Agent in **planning** mode on the current project.
 
@@ -24,28 +24,40 @@ bash "$CODEAGENT" "$ARGUMENTS" --mode planning --detach
 - **Run the first two lines exactly as written.** They locate the launcher (`codeagent.sh`).
 - `$ARGUMENTS` is inline requirements text, or a path to a requirements file inside the project (adr/requirements_<>.md). When it is a path, confirm the file exists before launching.
 - Pass `$ARGUMENTS` verbatim and launch immediately. The planning agent records its own assumptions for anything the requirements leave unspecified.
-- The printed run name confirms the container **started**. Completion is signalled by the terminal event in step 2.
+- The printed run name confirms the container **started**.
 - A non-zero exit means the run never started — failed preflight (Docker down, image missing, no credential), or a run already in progress for this project. Report that message verbatim and end the turn.
 
-## Step 2 — watch it
+## Step 2 — start the background wait
 
-If your agent can watch a background command (Claude Code: the `Monitor` tool, `persistent: true`), watch:
+Start this command **in the background**, with the longest timeout you can set:
 
 ```bash
-bash "$CODEAGENT" --watch
+bash "$CODEAGENT" --wait
 ```
 
-It prints one short progress line per milestone and exits on its own at a terminal state, so the watcher ends itself — do not set a timeout or stop it early.
+It waits until the run ends and then prints one line with the result. Because it runs in the background, you get a notice when it ends, and the user does not have to ask you. If you cannot run a command in the background, skip this step; the user will ask you how the run went.
 
-If your agent has no such facility, say the run is underway and can be checked with the [`status` skill](../status/SKILL.md).
+## Step 3 — inform the user, then end your turn
 
-Either way: say in one sentence that planning is underway, then end your turn. The container keeps working while this session sits idle.
+Write this message after the background command has started, as the last message of the turn, so the user sees it in full (text written before a command call can be hidden by the user's interface). The message contains, in full:
 
-## Step 3 — when the run finishes
+- the run name the launch printed;
+- the block of commands the launch printed under the run name, copied word for word — each line is an action the user can take from a terminal;
+- that the user can ask you at any time how the run is going or what a progress line means (the [`progress` skill](../progress/SKILL.md) answers that), and can ask you to stop the run;
+- that the container keeps working while this session sits idle;
+- that you will report when the run ends (only when the background wait is running).
 
-The last event is terminal (`Finished · …` or `Error · …`).
+Then end your turn.
 
-1. Read the newly created `adr/plan_*.md` and summarize its scenario, high-impact assumptions, and implementation checklist. That plan file is the sole source for the summary. If no new plan file exists, say so and quote the last event instead.
+## Step 4 — when the background `--wait` stops because of the timeout
+
+The run is still going. Start the same `--wait` command again in the background and end your turn.
+
+## Step 5 — when the run finishes
+
+Do this when the background `--wait` ends with the line `No run in progress. Last result: …`, or when the user asks you how the run went (the [`progress` skill](../progress/SKILL.md) tells you whether it has finished) and it shows that the run finished.
+
+1. Read the newly created `adr/plan_*.md` and summarize its scenario, high-impact assumptions, and implementation checklist. That plan file is the sole source for the summary. If no new plan file exists, say so.
 2. End with exactly one question:
 
    > The plan is at `adr/plan_<ts>.md`. Please review it — especially the assumptions. Refactor the plan if something is off. Once it looks right, tell me and I'll run the implementation.

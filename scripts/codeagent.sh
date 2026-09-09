@@ -30,11 +30,12 @@
 #              survives the caller exiting, being interrupted, or timing out. Intended for
 #              programmatic callers (Claude Code and other coding agents, CI). Interactive
 #              users normally omit it and keep the streaming output.
-#   --watch    Emit coarse, human-readable progress lines for this project's run (one per
-#              line) and exit when the run reaches a terminal state. Safe for attached runs
-#              started from another terminal.
-#   --status   Print a one-shot status line: the in-flight run, or the last run's result.
+#   --status   Print one status line: the in-flight run (last step, last activity), or the last
+#              run's result. `--status N` prints the last N lines of the progress trail first.
 #   --stop     Stop this project's in-flight run.
+#   --wait     Block until this project's in-flight run ends, then print the --status line and
+#              exit with the container's exit code. For programmatic callers: run it in the
+#              background right after --detach and let your harness notify you when it exits.
 #
 # REQUIRES A GIT REPOSITORY. Run it from the SQRL project directory you want to build; the
 # repository around that project defines what the agent can see:
@@ -75,13 +76,22 @@ IMAGE="${CODEAGENT_IMAGE:-$DEFAULT_IMAGE}"
 # Everything else is left in place for the requirements/forwarding split below.
 DETACH=0
 ACTION="run"
+TAIL_N=0          # --status N: print the last N trail lines before the status line
 REST_ARGS=()
+_after_status=0
 for _arg in "$@"; do
+    if [ "$_after_status" = "1" ]; then
+        _after_status=0
+        case "$_arg" in
+            *[!0-9]*|'') ;;                    # not a number: plain --status
+            *) TAIL_N="$_arg"; continue ;;
+        esac
+    fi
     case "$_arg" in
         --detach) DETACH=1 ;;
-        --watch)  ACTION="watch" ;;
-        --status) ACTION="status" ;;
+        --status) ACTION="status"; _after_status=1 ;;
         --stop)   ACTION="stop" ;;
+        --wait)   ACTION="wait" ;;
         *)        REST_ARGS+=("$_arg") ;;
     esac
 done
@@ -170,8 +180,12 @@ RUN_NAME="codeagent-${PROJECT_SLUG}-$(_short_hash "$PROJECT_ABS")"
 
 # The container writes both of these into the project through the bind mount, so they are live on
 # the host while the run is going. They — not `docker logs` — are the status channel, which is what
-# makes --rm safe and lets --status re-attach to a run from a different shell or a later session.
-LOG_PATH="$PROJECT_ABS/.claude/codeagent_logs.jsonl.bak"
+# makes --rm safe and lets --status re-attach from a different shell or a later session.
+#
+# PROGRESS_PATH is the human-readable trail the container renders from its log: one record per
+# line, `+HH:MM:SS  KIND   text`, continuation lines indented. Truncated when a run starts and left
+# in place afterwards, so the last run's trail can be revisited until the next run overwrites it.
+PROGRESS_PATH="$PROJECT_ABS/.claude/codeagent-progress.txt"
 RESULTS_PATH="$PROJECT_ABS/.code_agent_results.json"
 
 # --- Shared helpers ----------------------------------------------------------------------------
@@ -204,14 +218,10 @@ fmt_elapsed() {
     fi
 }
 
-# Extract a string / integer field from one line of JSON. The log is one JSON object per line and
-# every inner quote is escaped by json.dumps, so a naive match cannot run past the field it wants.
-json_str() {
-    printf '%s' "$1" | sed -n "s/.*\"$2\": \"\\([^\"]*\\)\".*/\\1/p" | head -1
-}
-json_num() {
-    printf '%s' "$1" | sed -n "s/.*\"$2\": \\(-\\{0,1\\}[0-9][0-9]*\\).*/\\1/p" | head -1
-}
+# Modification time as epoch seconds, portable across GNU (Linux) and BSD (macOS). GNU first: GNU
+# `stat -f` takes no argument, so the BSD form would make GNU print file-system status to stdout
+# before failing on the bogus `%m` operand; GNU `stat -c` fails cleanly (no stdout) on BSD.
+file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 
 # Read one field out of the pretty-printed .code_agent_results.json.
 result_field() {
@@ -229,170 +239,51 @@ result_summary() {
         "$(result_field refinements)" "$(result_field issue_count)"
 }
 
-# --- Progress vocabulary -----------------------------------------------------------------------
-# The ONLY user-facing description of what a run is doing. The underlying log is an implementation
-# detail: it is far too detailed to show, and its shape is free to change as long as this function
-# keeps producing the same handful of lines. Everything not matched here is silently dropped.
-#
-# Failure states are matched deliberately. A watcher that only knows the happy path goes quiet on a
-# crash, and quiet is indistinguishable from "still working" — the user would wait forever.
-WATCH_ITER=""
-render_milestone() {
-    _line="$1"
-    _msg=""
-
-    # The coding agent's own output is relayed verbatim under this type. It is the bulk of the log
-    # and none of it is a milestone; drop it before any other matching.
-    case "$_line" in
-        *'"type": "logs"'*|*'"type": "agent_prompt"'*|*'"type": "metrics"'*|*'"type": "agent_metrics"'*)
-            return 0 ;;
-    esac
-
-    case "$_line" in
-        *'"type": "run_result"'*)
-            printf 'Finished · %s\n' "$(result_summary)"
-            return 2 ;;
-        *'"message": "Run starting"'*)
-            _mode="$(json_str "$_line" mode)"
-            printf 'Run started · %s\n' "${_mode:-agent}"
-            return 0 ;;
-        *'"message": "Iteration '*)
-            WATCH_ITER="$(json_str "$_line" message | sed 's/[^0-9]//g')"
-            printf 'Iteration %s · implementing\n' "${WATCH_ITER:-?}"
-            return 0 ;;
-        *'"message": "Running tests"'*)
-            printf 'Iteration %s · running tests\n' "${WATCH_ITER:-?}"
-            return 0 ;;
-        *'"message": "Test execution failed"'*)
-            printf 'Iteration %s · tests failed, retrying\n' "${WATCH_ITER:-?}"
-            return 0 ;;
-        *'"message": "Running '*' judges"'*)
-            printf 'Iteration %s · verifying\n' "${WATCH_ITER:-?}"
-            return 0 ;;
-        *'"source": "refinement"'*)
-            printf 'Iteration %s · verified (%s issue(s))\n' \
-                "${WATCH_ITER:-?}" "$(json_num "$_line" issue_count)"
-            return 0 ;;
-        *'"source": "finalize"'*)
-            printf 'Finalizing\n'
-            return 0 ;;
-        *'"level": "CRITICAL"'*)
-            _msg="$(json_str "$_line" message)"
-            printf 'Error · %s\n' "${_msg:-unknown error}"
-            return 0 ;;
-    esac
-    return 0
-}
-
-# --- Actions: watch / status / stop ------------------------------------------------------------
+# --- Actions: status / stop / wait -------------------------------------------------------------
 # These read the project's own files and Docker state, so they work for a run started by anyone —
 # a detached plugin run, or an attached run in another terminal — including from a fresh shell
 # long after the run began.
 
-count_lines() {
-    if [ -f "$1" ]; then
-        _n="$(wc -l < "$1" 2>/dev/null | tr -d ' ')"
-        printf '%s' "${_n:-0}"
-    else
-        printf '0'
-    fi
-}
-
-# Inode of the log, used to notice the container replacing it. Portable across BSD/GNU `ls`.
-log_inode() {
-    ls -i "$LOG_PATH" 2>/dev/null | awk '{print $1}'
-}
-
-# Emit milestones for lines after $1 in the log; sets _drained to the new line count.
-# Runs in the CURRENT shell (input redirected, never piped) so WATCH_ITER accumulates across
-# batches — in a subshell every batch would restart at an unknown iteration.
-drain_log() {
-    _from="$1"
-    _drained="$_from"
-    _total="$(count_lines "$LOG_PATH")"
-    [ "$_total" -gt "$_from" ] || return 0
-    tail -n +$((_from + 1)) "$LOG_PATH" > "$_batch" 2>/dev/null
-    _drained="$_total"
-    while IFS= read -r _l; do
-        if ! render_milestone "$_l"; then
-            return 1     # terminal event rendered
-        fi
-    done < "$_batch"
-    return 0
-}
-
-do_watch() {
-    # Skip whatever is already in the log so a re-watch mid-run does not replay old milestones.
-    _seen="$(count_lines "$LOG_PATH")"
-    _inode="$(log_inode)"
-    _batch="$(mktemp)"
-    _saw_live=0
-    _waited=0
-    trap 'rm -f "$_batch"' EXIT
-
-    while :; do
-        if run_is_live; then _saw_live=1; fi
-
-        # The container rotates the previous run's log aside on startup and creates a new one.
-        # A changed inode (or a file that shrank) means we are now looking at a different file,
-        # so the offset we were holding belongs to the old one: start again from its first line.
-        _now_inode="$(log_inode)"
-        if [ "$_now_inode" != "$_inode" ] || [ "$(count_lines "$LOG_PATH")" -lt "$_seen" ]; then
-            _inode="$_now_inode"
-            _seen=0
-        fi
-
-        if ! drain_log "$_seen"; then rm -f "$_batch"; exit 0; fi
-        _seen="$_drained"
-
-        if [ "$_saw_live" -eq 1 ] && ! run_is_live; then
-            # Container is gone. Give the final writes a beat to land, drain once more, then decide.
-            sleep 2
-            if ! drain_log "$_seen"; then rm -f "$_batch"; exit 0; fi
-            printf 'Error · run ended without writing a result\n'
-            rm -f "$_batch"
-            exit 1
-        fi
-
-        # Never seen alive. Either nothing was started, or (rarely) the run began and ended inside
-        # the gap between --detach returning and this watch attaching, in which case its milestones
-        # were already in the log when we took our starting offset and are not replayed.
-        if [ "$_saw_live" -eq 0 ]; then
-            _waited=$((_waited + 5))
-            if [ "$_waited" -ge 60 ]; then
-                printf 'Error · no run in progress (nothing started, or it ended before the watch attached)\n'
-                rm -f "$_batch"
-                exit 1
-            fi
-        fi
-
-        sleep 5
-    done
+# Last RUN/STEP text, last activity text, and the DONE text if the trail ended. Records are
+# `+HH:MM:SS  KIND   text` (text starts at column 19); indented lines continue the previous record.
+trail_summary() {
+    awk '
+        /^[ \t]/ { next }
+        {
+            kind = $2; text = substr($0, 19)
+            if (kind == "RUN" || kind == "STEP") step = text
+            if (kind == "TEXT" || kind == "TOOL" || kind == "TASK") act = text
+            if (kind == "DONE") done = text
+        }
+        END { printf "%s\n%s\n%s\n", step, act, done }
+    ' "$PROGRESS_PATH" 2>/dev/null
 }
 
 do_status() {
+    # The recent trail first, the one-line summary last, so the last line is always the summary.
+    if [ "$TAIL_N" -gt 0 ] && [ -f "$PROGRESS_PATH" ]; then
+        tail -n "$TAIL_N" "$PROGRESS_PATH"
+    fi
     if run_is_live; then
         _started="$(run_started_epoch)"
-        if [ -n "$_started" ]; then
-            _ago=" · started $(fmt_elapsed $(( $(date +%s) - _started ))) ago"
-        else
-            _ago=""
+        _ago=""
+        [ -n "$_started" ] && _ago=" · started $(fmt_elapsed $(( $(date +%s) - _started ))) ago"
+        _step=""; _act=""; _done=""
+        if [ -f "$PROGRESS_PATH" ]; then
+            _sum="$(trail_summary)"
+            _step="$(printf '%s\n' "$_sum" | sed -n 1p)"
+            _act="$(printf '%s\n' "$_sum" | sed -n 2p)"
+            _done="$(printf '%s\n' "$_sum" | sed -n 3p)"
         fi
-        # Replay the whole log and keep only the final milestone. The loop is redirected rather
-        # than piped so WATCH_ITER carries forward and iteration numbers come out right.
-        _last=""
-        if [ -f "$LOG_PATH" ]; then
-            _tmp="$(mktemp)"
-            while IFS= read -r _l; do
-                render_milestone "$_l"
-            done < "$LOG_PATH" > "$_tmp" 2>/dev/null
-            _last="$(tail -1 "$_tmp" 2>/dev/null)"
-            rm -f "$_tmp"
-        fi
-        if [ -n "$_last" ]; then
-            printf 'Running · %s%s · %s\n' "$(run_mode_label)" "$_ago" "$_last"
+        if [ -n "$_done" ]; then
+            printf 'Finishing · %s\n' "$_done"
+        elif [ -n "$_act" ]; then
+            # The trail's mtime is the last write, whatever its kind: the run's last sign of life.
+            _age="$(fmt_elapsed $(( $(date +%s) - $(file_mtime "$PROGRESS_PATH") )))"
+            printf 'Running · %s%s · %s · last: %s (%s ago)\n' "$(run_mode_label)" "$_ago" \
+                "${_step:-starting up}" "$_act" "$_age"
         else
-            printf 'Running · %s%s · starting up\n' "$(run_mode_label)" "$_ago"
+            printf 'Running · %s%s · %s\n' "$(run_mode_label)" "$_ago" "${_step:-starting up}"
         fi
         return 0
     fi
@@ -404,6 +295,18 @@ do_status() {
     fi
 }
 
+# Printed after a detached launch. The launcher is the one place that knows its own absolute path
+# and the project directory, so the commands come out copy-pasteable for a second terminal: a
+# plugin-installed copy lives under a per-host cache path no user could type from memory.
+SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
+print_background_hints() {
+    printf 'Running in the background as a detached container. This session can close; the run continues.\n'
+    printf "  follow it live:   tail -f '%s'\n" "$PROGRESS_PATH"
+    printf "  wait for it:      cd '%s' && '%s' --wait\n" "$PROJECT_ABS" "$SELF_PATH"
+    printf "  status:           cd '%s' && '%s' --status\n" "$PROJECT_ABS" "$SELF_PATH"
+    printf "  stop:             cd '%s' && '%s' --stop\n" "$PROJECT_ABS" "$SELF_PATH"
+}
+
 do_stop() {
     if run_is_live; then
         docker stop "$RUN_NAME" >/dev/null 2>&1
@@ -413,10 +316,21 @@ do_stop() {
     fi
 }
 
+# Block until the run ends, then print the line --status prints. `docker wait` blocks on the
+# daemon — no polling, nothing printed until the end — and returns the container's exit code
+# (0 success, 1 failure, 143 stopped), which becomes this script's. A run that is already gone
+# fails it at once; that is swallowed and the status line still says what happened.
+do_wait() {
+    _rc="$(docker wait "$RUN_NAME" 2>/dev/null)"
+    case "$_rc" in ''|*[!0-9]*) _rc=0 ;; esac
+    do_status
+    return "$_rc"
+}
+
 case "$ACTION" in
-    watch)  do_watch;  exit $? ;;
     status) do_status; exit $? ;;
     stop)   do_stop;   exit $? ;;
+    wait)   do_wait;   exit $? ;;
 esac
 
 # --- Launch path -------------------------------------------------------------------------------
@@ -695,6 +609,7 @@ fi
 if [ "$DETACH" = "1" ]; then
     if docker run "${DOCKER_ARGS[@]}" "$IMAGE" "${AGENT_ARGS[@]}" >/dev/null; then
         echo "$RUN_NAME"
+        print_background_hints
     else
         # The container never started, so nothing will ever consume the credentials file.
         [ -n "$TEMP_CREDENTIALS" ] && rm -f "$TEMP_CREDENTIALS"

@@ -25,9 +25,19 @@ the test runner and the reviewing judges.
 | `plan` | `/datasqrl:plan` | Planning run → reviewable, checkbox-tracked `adr/plan_<ts>.md`. |
 | `implement` | `/datasqrl:implement` | The full autonomous loop over an approved plan. |
 | `patch` | `/datasqrl:patch` | A small change to an existing project: no planning, no judges, but it still runs and fixes the tests. |
-| `status` | `/datasqrl:status` | What the current run is doing, or the last result. |
+| `progress` | `/datasqrl:progress` | Everything about the current run: is it still going, what its progress output means, whether it is stuck; stops it on request. |
+| `deploy` | `/datasqrl:deploy` | Deploys a committed and pushed project to DataSQRL Cloud, waits for it, reports the result. Also reads deployment status and logs. |
+| `promote` | `/datasqrl:promote` | Makes an existing deployment the project's main one, after showing you which one it replaces. |
 
-Deploying to DataSQRL Cloud is not covered by these skills.
+`deploy` is a separate step you ask for, not the tail of an implementation run. It deploys a
+commit from GitHub rather than your working tree, so the work has to be committed and pushed
+first, and signing in needs you to approve a browser prompt once per session. Terminating,
+stopping, resizing and upgrading deployments, and managing projects, members and secrets, are
+Web UI tasks — neither skill can do them.
+
+`promote` is deliberately separate from `deploy`, and never chained onto it. Deploying adds a new
+deployment and changes nothing about which one is main; promoting changes what the project serves.
+So the second is always its own request, made after you have seen the first one succeed.
 
 You rarely type any of these. Say *"I want a pipeline that ingests our order webhooks and reports
 daily revenue"* and the workflow starts on its own.
@@ -40,8 +50,9 @@ The run belongs to the Docker daemon, not to your session, which means:
 
 - **Close the session, interrupt your agent, reboot your editor** — the run finishes anyway and
   still writes `.code_agent_results.json`.
-- **Progress is a handful of plain-English lines**, not a log dump.
-- **`status` works from anywhere** — a different session, hours later, on a run you did not start.
+- **You follow it from another terminal.** The launch prints the command, `tail -f` on the run's progress log, that shows what the agent is doing as it happens. Ask your agent whether it is still going, what the output means, or to stop it (`progress`).
+- **Your agent learns when it ends.** Right after the launch, the agent starts `codeagent.sh --wait` in the background. That command waits for the run and prints the result when the run ends, so the agent reports back on its own. You can still ask at any time (`progress`).
+- **`progress` works from anywhere** — a different session, hours later, on a run you did not start.
 - **One run at a time per project.** A second implement on the same project is refused while the
   first is going, so two agents can never interleave edits to the same files. Different projects
   run in parallel fine.
@@ -56,6 +67,22 @@ The run belongs to the Docker daemon, not to your session, which means:
 - **No AWS credentials needed** — the skills pass placeholders, so run-log upload is skipped.
 - A **git repository**. The repo is mounted read-only so the agent can discover sibling projects
   and shared data catalogs, and your project is the only writable place.
+- **A bash shell.** Every skill shells out to one of the `scripts/*.sh`, so on Windows use
+  **WSL**, which is the tested path. Git Bash runs `datasqrl-cloud.sh` but is **not** enough for
+  the containerized agent: MSYS rewrites the `-v <host>:/workspace` mount arguments in
+  `codeagent.sh`, and `git rev-parse --show-toplevel` yields `/c/Users/…` where Docker Desktop
+  wants `C:/Users/…`.
+
+For `deploy` and `promote` only:
+
+- **`curl` and `jq`** on your PATH. Git Bash ships `curl` but not `jq`: `winget install jq`.
+  On NTFS the token cache cannot be permission-restricted, so it is only as private as your user
+  profile directory.
+- A **DataSQRL Cloud account** with the Member or Owner role in the organization, and the project
+  already created there (Add Project links it to a GitHub repository).
+- A **browser**, to approve the sign-in. Tokens are cached under
+  `${XDG_CONFIG_HOME:-~/.config}/datasqrl/credentials.json` and refresh themselves, so this is at
+  most once per session.
 
 ## Install
 
@@ -125,6 +152,7 @@ The repository root is simultaneously the marketplace root, the plugin root, and
 .cursor-plugin/plugin.json
 skills/<name>/SKILL.md          ← one shared tree, all three manifests point at it
 scripts/codeagent.sh            ← byte-identical copy of agent/codeagent.sh (CI-enforced)
+scripts/datasqrl-cloud.sh       ← DataSQRL Cloud API client; lives only here
 install-skills.sh               ← Copilot only
 ```
 
@@ -133,7 +161,7 @@ so one published repo installs in all three. The Claude marketplace entry uses `
 
 **Do not add a `skills` key to `.claude-plugin/plugin.json`.** With a marketplace-root source, a
 declared `skills` list becomes the *complete* set and the default `skills/` scan stops running —
-so adding one directory would silently hide the other five. Leaving the key out keeps the full
+so adding one directory would silently hide all the others. Leaving the key out keeps the full
 scan. (That same rule is what would let a second plugin entry carve out its own subset later.)
 
 ### Local development
