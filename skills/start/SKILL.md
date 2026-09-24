@@ -1,6 +1,6 @@
 ---
 name: start
-description: Use whenever the user wants to build, extend, change, or plan a DataSQRL data pipeline or data catalog - including ingesting a source (Kafka topic, webhook, REST endpoint, database, file) into DataSQRL, exposing a GraphQL or REST API over streaming data, or writing a requirements document for such work. Also use when they mention DataSQRL, SQRL, .sqrl files, or ask how to get started with one, and when they want to deploy, ship or release a DataSQRL project to DataSQRL Cloud, check on a deployment, or promote one to main. This skill owns the whole workflow; it decides what happens next and delegates each step.
+description: Use whenever the user wants to build, extend, change, or plan a DataSQRL data pipeline or data catalog - including ingesting a source (Kafka topic, webhook, REST endpoint, database, file) into DataSQRL, exposing a GraphQL or REST API over streaming data, or writing a requirements document for such work, or resolving a GitHub issue filed on a DataSQRL project. Also use when they mention DataSQRL, SQRL, .sqrl files, or ask how to get started with one, and when they want to deploy, ship or release a DataSQRL project to DataSQRL Cloud, check on a deployment, or promote one to main. This skill owns the whole workflow; it decides what happens next and delegates each step.
 ---
 # Build or deploy
 
@@ -25,6 +25,8 @@ A containerized code agent builds DataSQRL projects. It holds the SQRL compiler,
 skill library, a test runner and reviewing judges. This section sets up the environment, routes to
 a lane, invokes the agent, and reports what the agent returns.
 
+A request to resolve a GitHub issue — the user gives its URL or number, or points at an issue the DataSQRL Cloud assistant filed — goes to the [`resolve-issue` skill](../resolve-issue/SKILL.md) instead of the steps below. It locates the project from the issue, writes the issue as requirements, and picks the lane the fix needs.
+
 There are two lanes, and this section takes them in order:
 
 | | Step 1 · Setup | Step 2 · Route | Step 3 · Run |
@@ -39,7 +41,7 @@ The containerized agent writes every file of the DataSQRL project: `.sqrl` scrip
 snapshots. This holds for a new project in an empty directory — the agent creates the directory
 layout itself.
 
-In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements` skill. In Lane A the container persists the request string itself.
+In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements` skill. In Lane A the container persists the request string itself. The `resolve-issue` skill writes that file from the issue in either lane.
 
 ---
 

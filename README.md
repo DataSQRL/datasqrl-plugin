@@ -25,6 +25,7 @@ the test runner and the reviewing judges.
 | `plan` | `/datasqrl:plan` | Planning run → reviewable, checkbox-tracked `adr/plan_<ts>.md`. |
 | `implement` | `/datasqrl:implement` | The full autonomous loop over an approved plan. |
 | `patch` | `/datasqrl:patch` | A small change to an existing project: no planning, no judges, but it still runs and fixes the tests. |
+| `resolve-issue` | `/datasqrl:resolve-issue` | Resolves a GitHub issue, such as one the DataSQRL Cloud assistant filed: runs the agent from the project's directory in the lane the fix needs, then gives you the commit message that closes the issue. |
 | `progress` | `/datasqrl:progress` | Everything about the current run: is it still going, what its progress output means, whether it is stuck; stops it on request. |
 | `deploy` | `/datasqrl:deploy` | Deploys a committed and pushed project to DataSQRL Cloud, waits for it, reports the result. Also reads deployment status and logs. |
 | `promote` | `/datasqrl:promote` | Makes an existing deployment the project's main one, after showing you which one it replaces. |
@@ -72,6 +73,11 @@ The run belongs to the Docker daemon, not to your session, which means:
   the containerized agent: MSYS rewrites the `-v <host>:/workspace` mount arguments in
   `codeagent.sh`, and `git rev-parse --show-toplevel` yields `/c/Users/…` where Docker Desktop
   wants `C:/Users/…`.
+
+For `resolve-issue` only:
+
+- **`gh`**, signed in (`gh auth login`), to read the issue. A public repository's issue also
+  reads with `curl` and `jq`.
 
 For `deploy` and `promote` only:
 
