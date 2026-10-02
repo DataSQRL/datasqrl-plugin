@@ -559,27 +559,95 @@ if [ -f "$CREDENTIALS_FILE" ]; then
   DOCKER_ARGS+=(-v "$CREDENTIALS_FILE:/root/.claude/.credentials.json:ro")
 fi
 
-# Pass API key if set (takes precedence over credentials file)
-if [ -n "$ANTHROPIC_API_KEY" ]; then
-  DOCKER_ARGS+=(-e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY")
+# --- Model provider settings -------------------------------------------------------------------
+# The container gets these variables by NAME and nothing else from the host environment. The
+# agent runs arbitrary shell commands and its logs go to S3, so an unrelated secret in the
+# caller's shell has no business inside it. Host PATH, HOME and JAVA_HOME would also replace
+# the image's own values.
+#
+# `-e NAME` copies the host value only when the variable is set, and keeps the value out of the
+# `docker run` argument list that `ps` shows.
+#
+# The Pi names follow https://pi.dev/docs/latest/providers. test-docker-local.sh checks every
+# variable the image's Pi documents against this list, so a Pi upgrade cannot drift from it.
+PROVIDER_ENV_VARS=(
+  # Anthropic (also the judges) and Anthropic-compatible endpoints
+  ANTHROPIC_API_KEY ANTHROPIC_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
+  ANTHROPIC_CUSTOM_HEADERS CLAUDE_CODE_OAUTH_TOKEN
+  # Pi providers with a single API key
+  ANT_LING_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY NVIDIA_API_KEY GEMINI_API_KEY
+  COPILOT_GITHUB_TOKEN MISTRAL_API_KEY GROQ_API_KEY CEREBRAS_API_KEY XAI_API_KEY
+  OPENROUTER_API_KEY AI_GATEWAY_API_KEY ZAI_API_KEY ZAI_CODING_CN_API_KEY OPENCODE_API_KEY
+  RADIUS_API_KEY TYPESAFE_API_KEY HF_TOKEN FIREWORKS_API_KEY TOGETHER_API_KEY BASETEN_API_KEY
+  KIMI_API_KEY META_API_KEY MINIMAX_API_KEY MINIMAX_CN_API_KEY MOONSHOT_API_KEY
+  QWEN_TOKEN_PLAN_API_KEY QWEN_TOKEN_PLAN_CN_API_KEY XIAOMI_API_KEY
+  XIAOMI_TOKEN_PLAN_CN_API_KEY XIAOMI_TOKEN_PLAN_AMS_API_KEY XIAOMI_TOKEN_PLAN_SGP_API_KEY
+  # Azure OpenAI
+  AZURE_OPENAI_API_KEY AZURE_OPENAI_BASE_URL AZURE_OPENAI_RESOURCE_NAME
+  # Amazon Bedrock (the access keys also upload the logs to S3)
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK
+  AWS_PROFILE AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN AWS_ROLE_SESSION_NAME
+  AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+  # Google Vertex AI
+  GOOGLE_CLOUD_API_KEY GOOGLE_CLOUD_PROJECT GCLOUD_PROJECT GOOGLE_CLOUD_LOCATION
+  GOOGLE_APPLICATION_CREDENTIALS
+  # Cloudflare AI Gateway and Workers AI
+  CLOUDFLARE_API_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_GATEWAY_ID
+  # Claude Code's own cloud modes (--agent claude-code)
+  CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
+  ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION
+  ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_FOUNDRY_BASE_URL
+  # Model selection, the environment form of --model and --provider
+  CODING_AGENT_MODEL CODING_AGENT_PROVIDER
+  # Claude Code on Bedrock with a credential no variable names (an EC2 instance role)
+  CODEAGENT_AWS_CHAIN
+)
+# ECS task credentials come as a family of variables that share this prefix.
+while IFS= read -r _name; do
+  PROVIDER_ENV_VARS+=("$_name")
+done < <(compgen -e | grep '^AWS_CONTAINER_CREDENTIALS_')
+
+# CODEAGENT_PASS_ENV adds names this list lacks, comma-separated: a newer Pi provider, or a
+# custom provider's key from ~/.pi/agent/models.json.
+IFS=',' read -r -a _extra_env <<< "${CODEAGENT_PASS_ENV:-}"
+for _name in "${_extra_env[@]}"; do
+  _name="${_name// /}"
+  [ -z "$_name" ] && continue
+  if [[ ! "$_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "Error: CODEAGENT_PASS_ENV holds '$_name', which is not a variable name." >&2
+    exit 1
+  fi
+  PROVIDER_ENV_VARS+=("$_name")
+done
+
+for _name in "${PROVIDER_ENV_VARS[@]}"; do
+  [ -n "${!_name+set}" ] && DOCKER_ARGS+=(-e "$_name")
+done
+
+# Variables that hold a PATH need the file too. It is mounted read-only at the same path, so the
+# variable stays valid inside the container unchanged.
+for _name in GOOGLE_APPLICATION_CREDENTIALS AWS_WEB_IDENTITY_TOKEN_FILE \
+             AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE; do
+  _path="${!_name:-}"
+  [ -n "$_path" ] || continue
+  if [ ! -f "$_path" ]; then
+    echo "Error: $_name points at '$_path', which is not a file." >&2
+    exit 1
+  fi
+  DOCKER_ARGS+=(-v "$_path:$_path:ro")
+done
+
+# A named AWS profile lives in ~/.aws, which the SDKs read from the home directory.
+if [ -n "${AWS_PROFILE:-}" ] && [ -d "$HOME/.aws" ]; then
+  DOCKER_ARGS+=(-v "$HOME/.aws:/root/.aws:ro")
 fi
 
-# Pass OAuth token if set
-if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-  DOCKER_ARGS+=(-e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN")
-fi
-
-# Pass AWS credentials (validated inside container)
-if [ -n "$AWS_ACCESS_KEY_ID" ]; then
-  DOCKER_ARGS+=(-e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID")
-fi
-if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
-  DOCKER_ARGS+=(-e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY")
-fi
-
-# DeepSeek / alternative provider support
-if [ -n "$ANTHROPIC_BASE_URL" ]; then
-  DOCKER_ARGS+=(-e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL")
+# Vertex AI with Application Default Credentials (`gcloud auth application-default login`):
+# the Google SDKs find that file at a fixed path under the home directory.
+_adc="$HOME/.config/gcloud/application_default_credentials.json"
+if [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$_adc" ] \
+   && [ -n "${GOOGLE_CLOUD_PROJECT:-}${GCLOUD_PROJECT:-}${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
+  DOCKER_ARGS+=(-v "$_adc:/root/.config/gcloud/application_default_credentials.json:ro")
 fi
 
 # Scope the large-data hard gate (cmd.sh) to the PROJECT dir, so read-only shared siblings
