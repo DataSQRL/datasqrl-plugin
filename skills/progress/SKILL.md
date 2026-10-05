@@ -1,6 +1,6 @@
 ---
 name: progress
-description: Use when the user asks anything about the DataSQRL Code Agent run for the current project: whether it is still running or has finished, how far it has come, or asks to stop it. Works from any session at any time, including one that did not start the run. Explains and reports; does not fix or investigate the project.
+description: Use when the user asks anything about the DataSQRL Code Agent run for the current project - whether it is still running or has finished, how far it has come, or asks to stop it. Works from any session at any time, including one that did not start the run. Explains and reports; does not fix or investigate the project.
 argument-hint: "[optional pasted progress lines]"
 allowed-tools: Bash, Read
 ---
