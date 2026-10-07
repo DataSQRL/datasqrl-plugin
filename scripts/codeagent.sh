@@ -36,6 +36,13 @@
 #   --wait     Block until this project's in-flight run ends, then print the --status line and
 #              exit with the container's exit code. For programmatic callers: run it in the
 #              background right after --detach and let your harness notify you when it exits.
+#   --pull-image    Pull the selected edition's image, or update it when a newer build exists.
+#                   Starts no run.
+#   --image-exists  Print whether the selected edition's image is local; exit 0 or 1. Never pulls.
+#
+# The image flags work in any directory and take no other argument. The edition is os unless
+# DATASQRL_AGENT_EDITION=pro, DATASQRL_PRO_TOKEN is set, or pro-agent:latest is already exist.
+# DATASQRL_PRO_TOKEN is a GitHub token with read:packages; it unlocks the private pro image.
 #
 # REQUIRES A GIT REPOSITORY. Run it from the SQRL project directory you want to build; the
 # repository around that project defines what the agent can see:
@@ -68,14 +75,171 @@
 # AWS_SECRET_ACCESS_KEY uploads the run log to DataSQRL for troubleshooting and debugging. Without
 # DATASQRL_TELEMETRY=1 the log stays in the project, whatever AWS credentials are set.
 
-# The image every run uses. This is the same local name `build-docker-local.sh` produces and
-# `test-docker-local.sh` validates, so a local build is picked up with no extra flag.
-#
-# No registry serves this name, so preflight bootstraps it from the published image (pull + tag)
-# when it is missing — the two commands users previously had to run by hand.
-DEFAULT_IMAGE="adv-agent:latest"
-PUBLISHED_IMAGE="ghcr.io/datasqrl/adv-agent:latest"
-IMAGE="${CODEAGENT_IMAGE:-$DEFAULT_IMAGE}"
+# The images. Each edition is published under its own name and runs under a short local tag, the
+# same tag `build-docker-local.sh` gives a local build, so a local build is picked up with no extra
+# flag. Preflight pulls the published image and tags it when the local tag is missing.
+OS_REGISTRY_IMAGE="ghcr.io/datasqrl/adv-agent:latest"
+OS_LOCAL_IMAGE="adv-agent:latest"
+PRO_REGISTRY_IMAGE="ghcr.io/datasqrl/pro-agent:latest"
+PRO_LOCAL_IMAGE="pro-agent:latest"
+# A name for people typing `docker run` by hand: the pro image when there is one, else os.
+# Runs never use it, since it moves with whichever edition was pulled.
+COMMON_IMAGE="datasqrl-agent:latest"
+
+# --- Image helpers -----------------------------------------------------------------------------
+# Sets RUN_EDITION, REGISTRY_IMAGE and LOCAL_IMAGE. The first rule that matches wins:
+#   1. DATASQRL_AGENT_EDITION, when set
+#   2. pro, when DATASQRL_PRO_TOKEN is set
+#   3. pro, when the pro image is already local (a user who has both runs pro)
+#   4. os
+resolve_edition() {
+    case "${DATASQRL_AGENT_EDITION:-}" in
+        os|pro) RUN_EDITION="$DATASQRL_AGENT_EDITION" ;;
+        "")
+            if [ -n "${DATASQRL_PRO_TOKEN:-}" ] \
+               || docker image inspect "$PRO_LOCAL_IMAGE" >/dev/null 2>&1; then
+                RUN_EDITION="pro"
+            else
+                RUN_EDITION="os"
+            fi
+            ;;
+        *)
+            echo "Error: DATASQRL_AGENT_EDITION must be 'os' or 'pro', not '$DATASQRL_AGENT_EDITION'." >&2
+            exit 1
+            ;;
+    esac
+    if [ "$RUN_EDITION" = "pro" ]; then
+        REGISTRY_IMAGE="$PRO_REGISTRY_IMAGE"
+        LOCAL_IMAGE="$PRO_LOCAL_IMAGE"
+    else
+        REGISTRY_IMAGE="$OS_REGISTRY_IMAGE"
+        LOCAL_IMAGE="$OS_LOCAL_IMAGE"
+    fi
+}
+
+image_label() {
+    docker image inspect -f "{{index .Config.Labels \"$2\"}}" "$1" 2>/dev/null
+}
+
+# "edition: pro · version: 1.0.712". CI stamps the version; a local build has none.
+image_summary() {
+    _ed="$(image_label "$1" com.datasqrl.edition)"
+    _ver="$(image_label "$1" org.opencontainers.image.version)"
+    printf 'edition: %s · version: %s' "${_ed:-unknown}" "${_ver:-local build}"
+}
+
+# Logs Docker in to ghcr.io with DATASQRL_PRO_TOKEN, a GitHub personal access token (classic) with
+# the read:packages scope. The token only ever travels on stdin, never as an argument, so `ps`
+# cannot show it, and it is not forwarded into the container. GHCR identifies the account from
+# the token alone, but the login uses the token owner's real username, as GitHub documents it.
+# Docker keeps the login, so later pulls need no token.
+pro_login() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Error: DATASQRL_PRO_TOKEN needs curl on this machine to look up the token's account." >&2
+        exit 1
+    fi
+    _resp="$(printf 'Authorization: Bearer %s\n' "$DATASQRL_PRO_TOKEN" \
+        | curl -s -H @- -w '\n%{http_code}' https://api.github.com/user 2>/dev/null)"
+    _code="${_resp##*$'\n'}"
+    _user="$(printf '%s\n' "${_resp%$'\n'*}" \
+        | grep -o '"login": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    if [ "$_code" = "401" ] || [ "$_code" = "403" ]; then
+        echo "Error: GitHub rejected DATASQRL_PRO_TOKEN: the token is invalid or expired." >&2
+        echo "Ask DataSQRL for a new token, or unset DATASQRL_PRO_TOKEN to run the open-source edition." >&2
+        exit 1
+    fi
+    if [ "$_code" != "200" ] || [ -z "$_user" ]; then
+        echo "Error: could not reach GitHub to check DATASQRL_PRO_TOKEN (HTTP ${_code:-none})." >&2
+        exit 1
+    fi
+    if ! printf '%s' "$DATASQRL_PRO_TOKEN" \
+         | docker login ghcr.io -u "$_user" --password-stdin >/dev/null 2>&1; then
+        echo "Error: ghcr.io refused the login for '$_user'." >&2
+        echo "The token needs the 'read:packages' scope, and its GitHub account needs access to the" >&2
+        echo "pro edition from DataSQRL." >&2
+        exit 1
+    fi
+    echo "Logged in to ghcr.io as $_user." >&2
+}
+
+# Pulls REGISTRY_IMAGE and tags it as LOCAL_IMAGE. A failed pull stops the launcher. It never
+# switches to the other edition, because that would give a pro user the os image.
+ensure_image() {
+    if [ "$RUN_EDITION" = "pro" ] && [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
+        pro_login
+    fi
+    echo "Pulling $REGISTRY_IMAGE ($RUN_EDITION edition, ~3GB the first time)..." >&2
+    if ! docker pull "$REGISTRY_IMAGE"; then
+        echo "" >&2
+        echo "Error: could not pull '$REGISTRY_IMAGE'." >&2
+        if [ "$RUN_EDITION" = "pro" ] && [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
+            echo "" >&2
+            echo "The login worked, so the token's GitHub account most likely has not been given access" >&2
+            echo "to the pro edition by DataSQRL. Ask DataSQRL to grant it, or set DATASQRL_AGENT_EDITION=os" >&2
+            echo "to run the open-source edition." >&2
+        elif [ "$RUN_EDITION" = "pro" ]; then
+            echo "" >&2
+            echo "The pro image is private. Set DATASQRL_PRO_TOKEN to the token DataSQRL gave you." >&2
+            echo "" >&2
+            echo "If DataSQRL has given your own GitHub account access to the pro edition, you can use" >&2
+            echo "a personal access token (classic) from that account with the 'read:packages' scope" >&2
+            echo "instead: set it as DATASQRL_PRO_TOKEN, or log in once yourself:" >&2
+            echo "" >&2
+            echo "  echo \"\$GITHUB_PAT\" | docker login ghcr.io -u <your-github-username> --password-stdin" >&2
+            echo "" >&2
+            echo "Then re-run this command. To run the open-source edition instead, set DATASQRL_AGENT_EDITION=os." >&2
+        fi
+        exit 1
+    fi
+    if ! docker tag "$REGISTRY_IMAGE" "$LOCAL_IMAGE"; then
+        echo "Error: pulled '$REGISTRY_IMAGE' but could not tag it as '$LOCAL_IMAGE'." >&2
+        exit 1
+    fi
+    # The common tag follows pro whenever pro is local, so pulling os never takes it from pro.
+    if [ "$RUN_EDITION" = "pro" ] || ! docker image inspect "$PRO_LOCAL_IMAGE" >/dev/null 2>&1; then
+        docker tag "$LOCAL_IMAGE" "$COMMON_IMAGE" >/dev/null 2>&1
+    fi
+    echo "Pulled $REGISTRY_IMAGE as $LOCAL_IMAGE · $(image_summary "$LOCAL_IMAGE")" >&2
+}
+
+require_docker() {
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "Error: docker is not installed or not on PATH." >&2
+        exit 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "Error: cannot talk to the Docker daemon. Is Docker running?" >&2
+        exit 1
+    fi
+}
+
+# --pull-image: always pulls the selected edition, even when it is local, so it also updates.
+do_pull_image() {
+    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
+        echo "Error: DATASQRL_AGENT_IMAGE is set to '$DATASQRL_AGENT_IMAGE', and a custom image is never pulled." >&2
+        echo "Unset it to pull the published image." >&2
+        return 1
+    fi
+    resolve_edition
+    ensure_image
+}
+
+# --image-exists: one line on stdout, exit 0 when the selected image is local and 1 when it is not.
+# It never pulls, so a caller can decide what to do next.
+do_image_exists() {
+    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
+        _img="$DATASQRL_AGENT_IMAGE"; _what="$DATASQRL_AGENT_IMAGE"
+    else
+        resolve_edition
+        _img="$LOCAL_IMAGE"; _what="$LOCAL_IMAGE ($RUN_EDITION edition)"
+    fi
+    if docker image inspect "$_img" >/dev/null 2>&1; then
+        printf '%s is present · %s\n' "$_img" "$(image_summary "$_img")"
+        return 0
+    fi
+    printf '%s is missing · run: codeagent.sh --pull-image\n' "$_what"
+    return 1
+}
 
 # --- Argument partitioning ---------------------------------------------------------------------
 # Lifetime flags are consumed here and MUST NOT reach the Python CLI, which does not know them.
@@ -98,10 +262,26 @@ for _arg in "$@"; do
         --status) ACTION="status"; _after_status=1 ;;
         --stop)   ACTION="stop" ;;
         --wait)   ACTION="wait" ;;
+        --pull-image)   ACTION="pull-image" ;;
+        --image-exists) ACTION="image-exists" ;;
         *)        REST_ARGS+=("$_arg") ;;
     esac
 done
 set -- "${REST_ARGS[@]}"
+
+# The image actions run before the repository check: they touch no project, so they work from
+# any directory, including before a project exists.
+case "$ACTION" in
+    pull-image|image-exists)
+        if [ $# -gt 0 ] || [ "$DETACH" = "1" ]; then
+            echo "Error: --$ACTION takes no other arguments." >&2
+            exit 1
+        fi
+        require_docker
+        if [ "$ACTION" = "pull-image" ]; then do_pull_image; else do_image_exists; fi
+        exit $?
+        ;;
+esac
 
 # The requirements are the first positional argument — but only if it actually IS one. A leading
 # token that starts with '-' is a flag (e.g. `codeagent.sh --mode implementation`, which
@@ -395,44 +575,25 @@ fi
 # detached run either starts for real or reports a usable error inline. Without this, --rm plus
 # --detach would turn a bad image or an unreachable daemon into a vanished container and an empty
 # log — a failure with nothing to read.
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Error: docker is not installed or not on PATH." >&2
-    exit 1
-fi
-if ! docker info >/dev/null 2>&1; then
-    echo "Error: cannot talk to the Docker daemon. Is Docker running?" >&2
-    exit 1
-fi
+require_docker
 # Bootstrap the image if this machine has never run the agent before. Doing it here — before
 # anything detaches — is what keeps the "a detached run either starts for real or reports a usable
 # error inline" guarantee: a pull that failed after detaching would leave a vanished container and
 # an empty log.
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    # Only the default name can be bootstrapped: it is an alias we know how to produce. A custom
-    # CODEAGENT_IMAGE could point anywhere, so guessing where to fetch it from would be wrong.
-    if [ "$IMAGE" != "$DEFAULT_IMAGE" ]; then
-        echo "Error: image '$IMAGE' (from CODEAGENT_IMAGE) is not present locally." >&2
-        echo "Build it, pull it, or unset CODEAGENT_IMAGE to use the published image." >&2
+if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
+    # A custom image could point anywhere, so guessing where to fetch it from would be wrong.
+    IMAGE="$DATASQRL_AGENT_IMAGE"
+    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+        echo "Error: image '$IMAGE' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
+        echo "Build it, pull it, or unset DATASQRL_AGENT_IMAGE to use the published image." >&2
         exit 1
     fi
-
-    echo "Image '$IMAGE' not found; fetching it from $PUBLISHED_IMAGE (first run only, ~3GB)..." >&2
-    if ! docker pull "$PUBLISHED_IMAGE"; then
-        echo "" >&2
-        echo "Error: could not pull '$PUBLISHED_IMAGE'." >&2
-        echo "" >&2
-        echo "If the pull was denied, the package is private and Docker needs to authenticate." >&2
-        echo "Create a GitHub personal access token (classic) with the 'read:packages' scope at" >&2
-        echo "https://github.com/settings/tokens, then:" >&2
-        echo "" >&2
-        echo "  echo \"\$GITHUB_PAT\" | docker login ghcr.io -u <your-github-username> --password-stdin" >&2
-        echo "" >&2
-        echo "Then re-run this command." >&2
-        exit 1
-    fi
-    if ! docker tag "$PUBLISHED_IMAGE" "$IMAGE"; then
-        echo "Error: pulled '$PUBLISHED_IMAGE' but could not tag it as '$IMAGE'." >&2
-        exit 1
+else
+    resolve_edition
+    IMAGE="$LOCAL_IMAGE"
+    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+        echo "Image '$IMAGE' not found." >&2
+        ensure_image
     fi
 fi
 
@@ -690,21 +851,21 @@ PROVIDER_ENV_VARS=(
   # Telemetry, opt-in and off by default: uploads the run log for troubleshooting and debugging
   DATASQRL_TELEMETRY
   # Claude Code on Bedrock with a credential no variable names (an EC2 instance role)
-  CODEAGENT_AWS_CHAIN
+  DATASQRL_AGENT_AWS_CHAIN
 )
 # ECS task credentials come as a family of variables that share this prefix.
 while IFS= read -r _name; do
   PROVIDER_ENV_VARS+=("$_name")
 done < <(compgen -e | grep '^AWS_CONTAINER_CREDENTIALS_')
 
-# CODEAGENT_PASS_ENV adds names this list lacks, comma-separated: a newer Pi provider, or a
+# DATASQRL_AGENT_PASS_ENV adds names this list lacks, comma-separated: a newer Pi provider, or a
 # custom provider's key from ~/.pi/agent/models.json.
-IFS=',' read -r -a _extra_env <<< "${CODEAGENT_PASS_ENV:-}"
+IFS=',' read -r -a _extra_env <<< "${DATASQRL_AGENT_PASS_ENV:-}"
 for _name in "${_extra_env[@]}"; do
   _name="${_name// /}"
   [ -z "$_name" ] && continue
   if [[ ! "$_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-    echo "Error: CODEAGENT_PASS_ENV holds '$_name', which is not a variable name." >&2
+    echo "Error: DATASQRL_AGENT_PASS_ENV holds '$_name', which is not a variable name." >&2
     exit 1
   fi
   PROVIDER_ENV_VARS+=("$_name")

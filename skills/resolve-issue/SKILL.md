@@ -15,14 +15,13 @@ Issues filed by the DataSQRL Cloud assistant report a defect in the user's proje
 Run this first, so a missing image surfaces before any of the work below. It is a no-op when the image is already present:
 
 ```bash
-if ! docker image inspect adv-agent:latest >/dev/null 2>&1; then
-  echo "Fetching the DataSQRL agent image..."
-  docker pull ghcr.io/datasqrl/adv-agent:latest &&
-    docker tag ghcr.io/datasqrl/adv-agent:latest adv-agent:latest
-fi
+CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
+[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh   # fall back to PATH
+
+bash "$CODEAGENT" --image-exists || bash "$CODEAGENT" --pull-image
 ```
 
-Run it without prompting, and continue silently on success. On a failure, relay Docker's own message and follow the table in step 1a of the [`start` skill](../start/SKILL.md), which covers a private package and a stopped daemon.
+Run it without prompting, and continue silently on success. On a failure, relay the launcher's message and follow the table in step 1a of the [`start` skill](../start/SKILL.md), which covers a stopped daemon and pro access.
 
 ## Step 2 — read the issue
 

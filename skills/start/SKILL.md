@@ -52,32 +52,29 @@ In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements
 Run this once, at the start. It is a no-op when the image is already present:
 
 ```bash
-if ! docker image inspect adv-agent:latest >/dev/null 2>&1; then
-  echo "Fetching the DataSQRL agent image..."
-  docker pull ghcr.io/datasqrl/adv-agent:latest &&
-    docker tag ghcr.io/datasqrl/adv-agent:latest adv-agent:latest
-fi
+CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
+[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh   # fall back to PATH
+
+bash "$CODEAGENT" --image-exists || bash "$CODEAGENT" --pull-image
 ```
+
+The launcher checks and pulls the edition the user has set up: pro when `DATASQRL_PRO_TOKEN` or `DATASQRL_AGENT_EDITION=pro` is set, the open-source edition otherwise.
 
 Run it without prompting. On success, continue to 1b silently.
 
 #### If it fails
 
-Relay Docker's own message, then apply the matching fix.
+The launcher prints the cause and the fix. Relay its message, then apply the matching step.
 
-| Docker's error says | Meaning | What to do |
+| The message says | Meaning | What to do |
 |---|---|---|
-| `denied`, `unauthorized` | the package is private | give the user the GHCR login below |
-| `Cannot connect to the Docker daemon` | Docker is not running | ask them to start Docker, then retry once |
+| `Cannot connect to the Docker daemon` or `Is Docker running?` | Docker is not running | ask them to start Docker, then retry once |
+| `The pro image is private` | pro is selected, with no access set up | ask for the token DataSQRL gave them, and have them set it as `DATASQRL_PRO_TOKEN` in their own shell |
+| `invalid or expired` | DataSQRL's token was rejected | ask them to get a new token from DataSQRL |
+| `has not been given access` | the token's account cannot read the pro image | ask them to contact DataSQRL |
 | anything else | unknown | relay it verbatim and stop |
 
-For a denied pull:
-
-> Create a GitHub personal access token (classic) with the `read:packages` scope at
-> <https://github.com/settings/tokens>, then run:
-> ```
-> echo "$GITHUB_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
-> ```
+Leave the token in the user's hands: they set it in their own shell. A token pasted into this conversation would land in your transcript.
 
 ### 1b. Locate the project
 

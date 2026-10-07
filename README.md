@@ -60,9 +60,13 @@ The run belongs to the Docker daemon, not to your session, which means:
 
 ## Requirements
 
-- **Docker**, running locally. The agent image is fetched and tagged automatically on first use —
-  no manual `docker pull` or `docker tag`. If `ghcr.io/datasqrl/adv-agent` is private for you, the
-  pull will ask you to authenticate with a GitHub token (`read:packages` scope).
+- **Docker**, running locally. The agent image is fetched and tagged automatically on first use,
+  with no manual `docker pull` or `docker tag`. It is the open-source edition, which anyone can
+  pull. For the pro edition, set `DATASQRL_PRO_TOKEN` in the shell that starts your coding agent
+  to the token DataSQRL gave you. If DataSQRL has given your own GitHub account access to the pro
+  edition, a personal access token (classic) from that account with the `read:packages` scope
+  works the same way. The launcher then logs in and pulls pro. Set the token in your shell, not in
+  the chat with your coding agent.
 - An **Anthropic credential** — an `ANTHROPIC_API_KEY`, or a `claude login` subscription. The
   launcher discovers either automatically.
 - **No AWS credentials needed.** The run log stays in your project. Telemetry is off by default; opt in with
