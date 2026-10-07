@@ -574,6 +574,9 @@ PROVIDER_ENV_VARS=(
   # Anthropic (also the judges) and Anthropic-compatible endpoints
   ANTHROPIC_API_KEY ANTHROPIC_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   ANTHROPIC_CUSTOM_HEADERS CLAUDE_CODE_OAUTH_TOKEN
+  # Anthropic workload identity federation (Pi only; the judges still need a key or login)
+  ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID ANTHROPIC_IDENTITY_TOKEN_FILE
+  ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_WORKSPACE_ID
   # Pi providers with a single API key
   ANT_LING_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY NVIDIA_API_KEY GEMINI_API_KEY
   COPILOT_GITHUB_TOKEN MISTRAL_API_KEY GROQ_API_KEY CEREBRAS_API_KEY XAI_API_KEY
@@ -627,7 +630,7 @@ done
 # Variables that hold a PATH need the file too. It is mounted read-only at the same path, so the
 # variable stays valid inside the container unchanged.
 for _name in GOOGLE_APPLICATION_CREDENTIALS AWS_WEB_IDENTITY_TOKEN_FILE \
-             AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE; do
+             AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE ANTHROPIC_IDENTITY_TOKEN_FILE; do
   _path="${!_name:-}"
   [ -n "$_path" ] || continue
   if [ ! -f "$_path" ]; then
