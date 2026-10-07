@@ -58,9 +58,15 @@
 #   3. ~/.claude/.credentials.json (from `claude login`)
 #   4. macOS Keychain (extracted automatically from `claude login`)
 #
-# Required environment variables:
-#   - AWS_ACCESS_KEY_ID
-#   - AWS_SECRET_ACCESS_KEY
+# AWS_PROFILE (optional): used only by a Bedrock run (--provider amazon-bedrock) or an opted-in log
+# upload (DATASQRL_TELEMETRY=1); every other run ignores it. The profile becomes one temporary credential
+# here on the host, and only that credential reaches the container; ~/.aws is never mounted.
+# Access keys already set win over the profile. For an SSO profile, log in first with
+# `aws --profile <name> sso login`. Needs the AWS CLI v2.
+#
+# Telemetry (optional, opt-in, off by default): DATASQRL_TELEMETRY=1 with AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY uploads the run log to DataSQRL for troubleshooting and debugging. Without
+# DATASQRL_TELEMETRY=1 the log stays in the project, whatever AWS credentials are set.
 
 # The image every run uses. This is the same local name `build-docker-local.sh` produces and
 # `test-docker-local.sh` validates, so a local build is picked up with no extra flag.
@@ -458,6 +464,85 @@ fi
 # Set cloud MCP server
 #MCP_SERVER_URL="https://code-agent-datasqrl.api.sqrl.live/v1/mcp"
 
+# --- AWS profile ---------------------------------------------------------------------------------
+# An AWS profile reaches the container as ONE temporary credential, exported here on the host.
+# The container never gets ~/.aws: that folder can hold long-lived keys and an SSO login for every
+# account and role, and the agent runs shell commands.
+
+is_sso_profile() {
+    aws configure get sso_session --profile "$1" >/dev/null 2>&1 \
+        || aws configure get sso_start_url --profile "$1" >/dev/null 2>&1
+}
+
+# Exports a temporary credential for AWS_PROFILE into this process, plus AWS_REGION.
+# An expired or missing login stops the run before it starts, naming the command that fixes it.
+export_aws_profile_credentials() {
+    local profile="$AWS_PROFILE" out=""
+    if ! command -v aws >/dev/null 2>&1; then
+        echo "Error: AWS_PROFILE=$profile needs the AWS CLI v2 on this machine." >&2
+        echo "Install it: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" >&2
+        exit 1
+    fi
+    if ! out="$(aws configure export-credentials --profile "$profile" --format env-no-export 2>/dev/null)" \
+       || [ -z "$out" ]; then
+        echo "Error: could not get AWS credentials for profile '$profile'." >&2
+        if is_sso_profile "$profile"; then
+            echo "The AWS login is missing or expired. Log in, then re-run:" >&2
+            echo "  aws --profile $profile sso login" >&2
+        else
+            echo "See why with:" >&2
+            echo "  aws configure export-credentials --profile $profile" >&2
+        fi
+        exit 1
+    fi
+    # A static profile has no session token, so a stale one from the shell must not ride along.
+    unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+    local _k _v
+    while IFS='=' read -r _k _v; do
+        case "$_k" in
+            AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN) export "$_k=$_v" ;;
+        esac
+    done <<< "$out"
+    if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        echo "Error: the AWS CLI returned no access key for profile '$profile'." >&2
+        exit 1
+    fi
+    if [ -z "${AWS_REGION:-}" ]; then
+        AWS_REGION="$(aws configure get region --profile "$profile" 2>/dev/null)"
+        export AWS_REGION="${AWS_REGION:-us-east-1}"
+    fi
+    # The container works from the exported credential alone.
+    unset AWS_PROFILE
+}
+
+# The coding agent's provider: the --provider flag, else CODING_AGENT_PROVIDER, as in the CLI.
+RUN_PROVIDER="${CODING_AGENT_PROVIDER:-}"
+_take_next=0
+for _a in "${FORWARD_ARGS[@]}"; do
+    if [ "$_take_next" = "1" ]; then RUN_PROVIDER="$_a"; break; fi
+    case "$_a" in
+        --provider)   _take_next=1 ;;
+        --provider=*) RUN_PROVIDER="${_a#--provider=}"; break ;;
+    esac
+done
+
+# AWS_PROFILE is used only by a run that needs AWS: a Bedrock model or an opted-in log upload.
+# Many shells export AWS_PROFILE for unrelated work, so any other run ignores it; an expired login
+# then never blocks it, and no AWS credential reaches it.
+if [ -n "${AWS_PROFILE:-}" ]; then
+    case "$RUN_PROVIDER" in
+        amazon-bedrock|bedrock) _needs_aws=1 ;;
+        *)                      _needs_aws=0 ;;
+    esac
+    [ "${DATASQRL_TELEMETRY:-}" = "1" ] && _needs_aws=1
+    if [ "$_needs_aws" = "1" ] && { [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; }; then
+        export_aws_profile_credentials
+    else
+        # Access keys already in the environment win over a profile, as in the AWS SDK.
+        unset AWS_PROFILE
+    fi
+fi
+
 # Check for authentication (cross-platform)
 CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
 TEMP_CREDENTIALS=""
@@ -561,9 +646,9 @@ fi
 
 # --- Model provider settings -------------------------------------------------------------------
 # The container gets these variables by NAME and nothing else from the host environment. The
-# agent runs arbitrary shell commands and its logs go to S3, so an unrelated secret in the
-# caller's shell has no business inside it. Host PATH, HOME and JAVA_HOME would also replace
-# the image's own values.
+# agent runs arbitrary shell commands and its log can be uploaded to remote storage, so an
+# unrelated secret in the caller's shell has no business inside it. Host PATH, HOME and JAVA_HOME
+# would also replace the image's own values.
 #
 # `-e NAME` copies the host value only when the variable is set, and keeps the value out of the
 # `docker run` argument list that `ps` shows.
@@ -587,7 +672,7 @@ PROVIDER_ENV_VARS=(
   XIAOMI_TOKEN_PLAN_CN_API_KEY XIAOMI_TOKEN_PLAN_AMS_API_KEY XIAOMI_TOKEN_PLAN_SGP_API_KEY
   # Azure OpenAI
   AZURE_OPENAI_API_KEY AZURE_OPENAI_BASE_URL AZURE_OPENAI_RESOURCE_NAME
-  # Amazon Bedrock (the access keys also upload the logs to S3)
+  # Amazon Bedrock (with DATASQRL_TELEMETRY=1, the access keys also upload the run log)
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK
   AWS_PROFILE AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN AWS_ROLE_SESSION_NAME
   AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
@@ -602,6 +687,8 @@ PROVIDER_ENV_VARS=(
   ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_FOUNDRY_BASE_URL
   # Model selection, the environment form of --model and --provider
   CODING_AGENT_MODEL CODING_AGENT_PROVIDER
+  # Telemetry, opt-in and off by default: uploads the run log for troubleshooting and debugging
+  DATASQRL_TELEMETRY
   # Claude Code on Bedrock with a credential no variable names (an EC2 instance role)
   CODEAGENT_AWS_CHAIN
 )
@@ -639,11 +726,6 @@ for _name in GOOGLE_APPLICATION_CREDENTIALS AWS_WEB_IDENTITY_TOKEN_FILE \
   fi
   DOCKER_ARGS+=(-v "$_path:$_path:ro")
 done
-
-# A named AWS profile lives in ~/.aws, which the SDKs read from the home directory.
-if [ -n "${AWS_PROFILE:-}" ] && [ -d "$HOME/.aws" ]; then
-  DOCKER_ARGS+=(-v "$HOME/.aws:/root/.aws:ro")
-fi
 
 # Vertex AI with Application Default Credentials (`gcloud auth application-default login`):
 # the Google SDKs find that file at a fixed path under the home directory.

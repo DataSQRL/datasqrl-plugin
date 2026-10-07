@@ -65,7 +65,8 @@ The run belongs to the Docker daemon, not to your session, which means:
   pull will ask you to authenticate with a GitHub token (`read:packages` scope).
 - An **Anthropic credential** — an `ANTHROPIC_API_KEY`, or a `claude login` subscription. The
   launcher discovers either automatically.
-- **No AWS credentials needed** — the skills pass placeholders, so run-log upload is skipped.
+- **No AWS credentials needed.** The run log stays in your project. Telemetry is off by default; opt in with
+  `DATASQRL_TELEMETRY=1` and AWS keys, which shares it with DataSQRL for troubleshooting and debugging.
 - A **git repository**. The repo is mounted read-only so the agent can discover sibling projects
   and shared data catalogs, and your project is the only writable place.
 - **A bash shell.** Every skill shells out to one of the `scripts/*.sh`, so on Windows use
