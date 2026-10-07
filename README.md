@@ -61,7 +61,7 @@ The run belongs to the Docker daemon, not to your session, which means:
 ## Requirements
 
 - **Docker**, running locally. The agent image is fetched and tagged automatically on first use —
-  no manual `docker pull` or `docker tag`. If `ghcr.io/datasqrl/code-agent` is private for you, the
+  no manual `docker pull` or `docker tag`. If `ghcr.io/datasqrl/adv-agent` is private for you, the
   pull will ask you to authenticate with a GitHub token (`read:packages` scope).
 - An **Anthropic credential** — an `ANTHROPIC_API_KEY`, or a `claude login` subscription. The
   launcher discovers either automatically.

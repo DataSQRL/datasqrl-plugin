@@ -15,10 +15,10 @@ Issues filed by the DataSQRL Cloud assistant report a defect in the user's proje
 Run this first, so a missing image surfaces before any of the work below. It is a no-op when the image is already present:
 
 ```bash
-if ! docker image inspect datasqrl-code-agent:latest >/dev/null 2>&1; then
+if ! docker image inspect adv-agent:latest >/dev/null 2>&1; then
   echo "Fetching the DataSQRL agent image..."
-  docker pull ghcr.io/datasqrl/code-agent:latest &&
-    docker tag ghcr.io/datasqrl/code-agent:latest datasqrl-code-agent:latest
+  docker pull ghcr.io/datasqrl/adv-agent:latest &&
+    docker tag ghcr.io/datasqrl/adv-agent:latest adv-agent:latest
 fi
 ```
 

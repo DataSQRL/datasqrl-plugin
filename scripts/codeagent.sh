@@ -73,8 +73,8 @@
 #
 # No registry serves this name, so preflight bootstraps it from the published image (pull + tag)
 # when it is missing — the two commands users previously had to run by hand.
-DEFAULT_IMAGE="datasqrl-code-agent:latest"
-PUBLISHED_IMAGE="ghcr.io/datasqrl/code-agent:latest"
+DEFAULT_IMAGE="adv-agent:latest"
+PUBLISHED_IMAGE="ghcr.io/datasqrl/adv-agent:latest"
 IMAGE="${CODEAGENT_IMAGE:-$DEFAULT_IMAGE}"
 
 # --- Argument partitioning ---------------------------------------------------------------------

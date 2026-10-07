@@ -52,10 +52,10 @@ In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements
 Run this once, at the start. It is a no-op when the image is already present:
 
 ```bash
-if ! docker image inspect datasqrl-code-agent:latest >/dev/null 2>&1; then
+if ! docker image inspect adv-agent:latest >/dev/null 2>&1; then
   echo "Fetching the DataSQRL agent image..."
-  docker pull ghcr.io/datasqrl/code-agent:latest &&
-    docker tag ghcr.io/datasqrl/code-agent:latest datasqrl-code-agent:latest
+  docker pull ghcr.io/datasqrl/adv-agent:latest &&
+    docker tag ghcr.io/datasqrl/adv-agent:latest adv-agent:latest
 fi
 ```
 
