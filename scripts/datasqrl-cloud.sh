@@ -39,7 +39,7 @@
 #
 # Requires curl and jq.
 
-DEFAULT_BASE_URL="https://dev.datasqrl.com"
+DEFAULT_BASE_URL="https://cloud.datasqrl.com"
 BASE_URL="${DATASQRL_BASE_URL:-$DEFAULT_BASE_URL}"
 
 # Auth0 caps the device-code grant at 900s; the response carries the authoritative values
