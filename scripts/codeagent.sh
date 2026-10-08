@@ -59,7 +59,9 @@
 # Set CODEAGENT_ALLOW_NO_GIT=1 to bypass the git requirement (CI/automation only); the current
 # directory is then treated as a standalone single project.
 #
-# Authentication (in order of precedence):
+# Authentication for an Anthropic run (no --provider, --provider anthropic, or a bare model).
+# A run on another provider needs only that provider's variables, such as FIREWORKS_API_KEY.
+# In order of precedence:
 #   1. ANTHROPIC_API_KEY env var
 #   2. CLAUDE_CODE_OAUTH_TOKEN env var (from `claude setup-token`)
 #   3. ~/.claude/.credentials.json (from `claude login`)
@@ -676,8 +678,8 @@ export_aws_profile_credentials() {
     unset AWS_PROFILE
 }
 
-# The coding agent's provider: the --provider flag, else CODING_AGENT_PROVIDER, as in the CLI.
-RUN_PROVIDER="${CODING_AGENT_PROVIDER:-}"
+# The coding agent's provider: the --provider flag, else DATASQRL_AGENT_PROVIDER, as in the CLI.
+RUN_PROVIDER="${DATASQRL_AGENT_PROVIDER:-}"
 _take_next=0
 for _a in "${FORWARD_ARGS[@]}"; do
     if [ "$_take_next" = "1" ]; then RUN_PROVIDER="$_a"; break; fi
@@ -686,6 +688,27 @@ for _a in "${FORWARD_ARGS[@]}"; do
         --provider=*) RUN_PROVIDER="${_a#--provider=}"; break ;;
     esac
 done
+
+# The coding agent's model: the --model flag, else DATASQRL_AGENT_MODEL, as in the CLI.
+RUN_MODEL="${DATASQRL_AGENT_MODEL:-}"
+_take_next=0
+for _a in "${FORWARD_ARGS[@]}"; do
+    if [ "$_take_next" = "1" ]; then RUN_MODEL="$_a"; break; fi
+    case "$_a" in
+        --model)   _take_next=1 ;;
+        --model=*) RUN_MODEL="${_a#--model=}"; break ;;
+    esac
+done
+
+# A Claude login is needed only when the agent, and so the judges, run on Anthropic. Without
+# --provider, a provider/ prefix on the model names the provider, as Pi reads it; a bare model
+# is Anthropic's.
+_model_provider=""
+[[ "$RUN_MODEL" == */* ]] && _model_provider="${RUN_MODEL%%/*}"
+case "${RUN_PROVIDER:-${_model_provider:-anthropic}}" in
+    anthropic) CLAUDE_LOGIN_NEEDED=1 ;;
+    *)         CLAUDE_LOGIN_NEEDED=0 ;;
+esac
 
 # AWS_PROFILE is used only by a run that needs AWS: a Bedrock model or an opted-in log upload.
 # Many shells export AWS_PROFILE for unrelated work, so any other run ignores it; an expired login
@@ -725,7 +748,7 @@ write_temp_credentials() {
     CREDENTIALS_FILE="$TEMP_CREDENTIALS"
 }
 
-if [ -z "$ANTHROPIC_API_KEY" ]; then
+if [ "$CLAUDE_LOGIN_NEEDED" = "1" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
     if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
         # Materialize the OAuth token as a credentials.json so the in-container
         # orchestrator (which only reads ANTHROPIC_API_KEY or ~/.claude/.credentials.json)
@@ -800,8 +823,8 @@ if [ -n "$MCP_SERVER_URL" ]; then
   DOCKER_ARGS+=(-e MCP_SERVER_URL="$MCP_SERVER_URL")
 fi
 
-# Mount credentials file if it exists
-if [ -f "$CREDENTIALS_FILE" ]; then
+# Only an Anthropic run gets the Claude login; another provider's container never sees it.
+if [ "$CLAUDE_LOGIN_NEEDED" = "1" ] && [ -f "$CREDENTIALS_FILE" ]; then
   DOCKER_ARGS+=(-v "$CREDENTIALS_FILE:/root/.claude/.credentials.json:ro")
 fi
 
@@ -817,7 +840,7 @@ fi
 # The Pi names follow https://pi.dev/docs/latest/providers. test-docker-local.sh checks every
 # variable the image's Pi documents against this list, so a Pi upgrade cannot drift from it.
 PROVIDER_ENV_VARS=(
-  # Anthropic (also the judges) and Anthropic-compatible endpoints
+  # Anthropic and Anthropic-compatible endpoints
   ANTHROPIC_API_KEY ANTHROPIC_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   ANTHROPIC_CUSTOM_HEADERS CLAUDE_CODE_OAUTH_TOKEN
   # Anthropic workload identity federation (Pi only; the judges still need a key or login)
@@ -847,7 +870,7 @@ PROVIDER_ENV_VARS=(
   ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION
   ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_FOUNDRY_BASE_URL
   # Model selection, the environment form of --model and --provider
-  CODING_AGENT_MODEL CODING_AGENT_PROVIDER
+  DATASQRL_AGENT_MODEL DATASQRL_AGENT_PROVIDER
   # Telemetry, opt-in and off by default: uploads the run log for troubleshooting and debugging
   DATASQRL_TELEMETRY
   # Claude Code on Bedrock with a credential no variable names (an EC2 instance role)
