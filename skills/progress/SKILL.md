@@ -11,8 +11,8 @@ Explain the progress of the DataSQRL Code Agent run for the current project.
 Run this from the project directory and read the output before answering. It prints the last 40 lines of the run's progress trail, then one status line:
 
 ```bash
-CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
-[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh   # fall back to PATH
+CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
+[ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 bash "$CODEAGENT" --status 40
 ```
 

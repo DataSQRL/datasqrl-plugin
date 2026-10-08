@@ -2,8 +2,8 @@
 #
 # TWO BYTE-IDENTICAL COPIES OF THIS FILE EXIST. Edit only the first:
 #
-#   agent/codeagent.sh                     <- canonical; edit this one
-#   datasqrl-plugin/scripts/codeagent.sh   <- copy shipped inside the plugin
+#   agent/datasqrl-agent.sh                     <- canonical; edit this one
+#   datasqrl-plugin/scripts/datasqrl-agent.sh   <- copy shipped inside the plugin
 #
 # then run:  ./agent/sync-launcher.sh
 #
@@ -17,7 +17,7 @@
 # Run DataSQRL Code Agent with local or cloud MCP server.
 # Run this script from the workspace directory containing your DataSQRL project.
 #
-# Usage: ./codeagent.sh <requirements> [options...]
+# Usage: ./datasqrl-agent.sh <requirements> [options...]
 #
 # The requirements string is the first positional argument. Any additional
 # arguments are forwarded directly to the Python CLI (e.g., --mode,
@@ -56,7 +56,7 @@
 # writes (e.g. "script.include": {"data_catalog": {"package": "../data-catalog/package.json"}}) is equally valid in your real repo.
 # Invoked at the repo root, the project IS the repo and a single read-write mount is used.
 #
-# Set CODEAGENT_ALLOW_NO_GIT=1 to bypass the git requirement (CI/automation only); the current
+# Set DATASQRL_AGENT_ALLOW_NO_GIT=1 to bypass the git requirement (CI/automation only); the current
 # directory is then treated as a standalone single project.
 #
 # Authentication for an Anthropic run (no --provider, --provider anthropic, or a bare model).
@@ -239,7 +239,7 @@ do_image_exists() {
         printf '%s is present · %s\n' "$_img" "$(image_summary "$_img")"
         return 0
     fi
-    printf '%s is missing · run: codeagent.sh --pull-image\n' "$_what"
+    printf '%s is missing · run: datasqrl-agent.sh --pull-image\n' "$_what"
     return 1
 }
 
@@ -286,7 +286,7 @@ case "$ACTION" in
 esac
 
 # The requirements are the first positional argument — but only if it actually IS one. A leading
-# token that starts with '-' is a flag (e.g. `codeagent.sh --mode implementation`, which
+# token that starts with '-' is a flag (e.g. `datasqrl-agent.sh --mode implementation`, which
 # auto-discovers the latest plan and legitimately has no requirements argument). Treating a flag
 # as the requirements string silently corrupts the whole argument list, so guard against it.
 if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
@@ -311,11 +311,11 @@ if MOUNT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)"; then
     PROJECT_REL="$(git rev-parse --show-prefix 2>/dev/null)"
     PROJECT_REL="${PROJECT_REL%/}"        # --show-prefix has a trailing slash
     PROJECT_REL="${PROJECT_REL:-.}"       # empty at the repo root
-elif [ "${CODEAGENT_ALLOW_NO_GIT:-}" = "1" ]; then
+elif [ "${DATASQRL_AGENT_ALLOW_NO_GIT:-}" = "1" ]; then
     # Escape hatch for CI/automation: treat the current directory as a standalone project.
     MOUNT_DIR="$(pwd -P)"
     PROJECT_REL="."
-    echo "Warning: not inside a git repository; CODEAGENT_ALLOW_NO_GIT=1 set, continuing with the current directory only." >&2
+    echo "Warning: not inside a git repository; DATASQRL_AGENT_ALLOW_NO_GIT=1 set, continuing with the current directory only." >&2
 else
     echo "Error: the code agent must be run inside a git repository." >&2
     echo "" >&2
@@ -327,7 +327,7 @@ else
     echo "  - run 'git init' at the root of your project group (the directory that holds your" >&2
     echo "    project and any shared data catalog)." >&2
     echo "" >&2
-    echo "For CI/automation only, set CODEAGENT_ALLOW_NO_GIT=1 to bypass this check." >&2
+    echo "For CI/automation only, set DATASQRL_AGENT_ALLOW_NO_GIT=1 to bypass this check." >&2
     exit 1
 fi
 
@@ -364,7 +364,7 @@ PROJECT_SLUG="$(printf '%s' "$(basename "$PROJECT_ABS")" \
     | sed 's/[^a-z0-9_.-]/-/g' \
     | cut -c1-40)"
 [ -z "$PROJECT_SLUG" ] && PROJECT_SLUG="project"
-RUN_NAME="codeagent-${PROJECT_SLUG}-$(_short_hash "$PROJECT_ABS")"
+RUN_NAME="datasqrl-agent-${PROJECT_SLUG}-$(_short_hash "$PROJECT_ABS")"
 
 # The container writes both of these into the project through the bind mount, so they are live on
 # the host while the run is going. They — not `docker logs` — are the status channel, which is what
@@ -373,7 +373,7 @@ RUN_NAME="codeagent-${PROJECT_SLUG}-$(_short_hash "$PROJECT_ABS")"
 # PROGRESS_PATH is the human-readable trail the container renders from its log: one record per
 # line, `+HH:MM:SS  KIND   text`, continuation lines indented. Truncated when a run starts and left
 # in place afterwards, so the last run's trail can be revisited until the next run overwrites it.
-PROGRESS_PATH="$PROJECT_ABS/.claude/codeagent-progress.txt"
+PROGRESS_PATH="$PROJECT_ABS/.claude/datasqrl-agent-progress.txt"
 RESULTS_PATH="$PROJECT_ABS/.code_agent_results.json"
 
 # --- Shared helpers ----------------------------------------------------------------------------
@@ -536,11 +536,11 @@ if [ ${#FORWARD_ARGS[@]} -eq 0 ] || ! printf '%s\n' "${FORWARD_ARGS[@]}" | grep 
         echo "Error: no requirements provided and --mode not specified."
         echo ""
         echo "Usage:"
-        echo "  ./codeagent.sh \"Add a metrics endpoint\"          # plan from text"
-        echo "  ./codeagent.sh requirements.md                    # plan from file"
-        echo "  ./codeagent.sh --mode implementation              # implement from latest ADR"
-        echo "  ./codeagent.sh my_adr.md --mode implementation    # implement from specific ADR"
-        echo "  ./codeagent.sh \"widen the window\" --mode patch    # small change, no planning"
+        echo "  ./datasqrl-agent.sh \"Add a metrics endpoint\"          # plan from text"
+        echo "  ./datasqrl-agent.sh requirements.md                    # plan from file"
+        echo "  ./datasqrl-agent.sh --mode implementation              # implement from latest ADR"
+        echo "  ./datasqrl-agent.sh my_adr.md --mode implementation    # implement from specific ADR"
+        echo "  ./datasqrl-agent.sh \"widen the window\" --mode patch    # small change, no planning"
         exit 1
     fi
 fi
@@ -567,8 +567,8 @@ if [ "$RUN_MODE" = "patch" ] && [ -z "$REQUIREMENTS" ]; then
     echo "Error: patch mode requires a request describing the change." >&2
     echo "" >&2
     echo "Usage:" >&2
-    echo "  ./codeagent.sh \"widen the aggregation window to 2 hours\" --mode patch" >&2
-    echo "  ./codeagent.sh change-notes.md --mode patch" >&2
+    echo "  ./datasqrl-agent.sh \"widen the aggregation window to 2 hours\" --mode patch" >&2
+    echo "  ./datasqrl-agent.sh change-notes.md --mode patch" >&2
     exit 1
 fi
 
@@ -616,8 +616,8 @@ if run_is_live; then
     echo "" >&2
     echo "Two agents on one project would interleave edits to the same files, so this run was" >&2
     echo "not started. Check on the existing one or stop it:" >&2
-    echo "  ./codeagent.sh --status" >&2
-    echo "  ./codeagent.sh --stop" >&2
+    echo "  ./datasqrl-agent.sh --status" >&2
+    echo "  ./datasqrl-agent.sh --stop" >&2
     exit 1
 fi
 
@@ -737,7 +737,7 @@ TEMP_CREDENTIALS=""
 # same project, so at most one exists) instead of a mktemp file removed on exit.
 write_temp_credentials() {
     if [ "$DETACH" = "1" ]; then
-        TEMP_CREDENTIALS="${TMPDIR:-/tmp}/codeagent-creds-${RUN_NAME}.json"
+        TEMP_CREDENTIALS="${TMPDIR:-/tmp}/datasqrl-agent-creds-${RUN_NAME}.json"
         rm -f "$TEMP_CREDENTIALS"
         (umask 077; printf '%s' "$1" > "$TEMP_CREDENTIALS")
     else
@@ -929,7 +929,7 @@ if [ -n "$HOST_MAC_ID" ]; then
   DOCKER_ARGS+=(-e HOST_MAC_ID="$HOST_MAC_ID")
 fi
 
-# CLI arguments that codeagent.sh owns (container paths for the reconstructed layout).
+# CLI arguments that datasqrl-agent.sh owns (container paths for the reconstructed layout).
 # Appended last so they win over any stray user-passed duplicates.
 CLI_TAIL=(--workspace "$CONTAINER_WORKSPACE" --project-subdir "$PROJECT_SUBDIR")
 

@@ -44,14 +44,14 @@ for dest in "$TARGET/.github/skills" "$TARGET/.agents/skills"; do
 done
 
 echo
-if command -v codeagent.sh >/dev/null 2>&1; then
-    echo "codeagent.sh found on PATH: $(command -v codeagent.sh)"
+if command -v datasqrl-agent.sh >/dev/null 2>&1; then
+    echo "datasqrl-agent.sh found on PATH: $(command -v datasqrl-agent.sh)"
 else
     cat <<EOF
-NOTE: codeagent.sh is not on your PATH, and the skills invoke it by that name.
+NOTE: datasqrl-agent.sh is not on your PATH, and the skills invoke it by that name.
 Install it with:
 
-  curl -fsSL https://raw.githubusercontent.com/DataSQRL/datasqrl-plugin/main/scripts/codeagent.sh \\
-    -o /usr/local/bin/codeagent.sh && chmod +x /usr/local/bin/codeagent.sh
+  curl -fsSL https://raw.githubusercontent.com/DataSQRL/datasqrl-plugin/main/scripts/datasqrl-agent.sh \\
+    -o /usr/local/bin/datasqrl-agent.sh && chmod +x /usr/local/bin/datasqrl-agent.sh
 EOF
 fi

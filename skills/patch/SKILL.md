@@ -8,7 +8,7 @@ Run the DataSQRL Code Agent in **patch** mode on the current project: the reques
 
 No planning stage, no judge panel, one round to fix whatever the tests catch.
 
-**Working directory:** run everything below from the **project** directory. `codeagent.sh` derives
+**Working directory:** run everything below from the **project** directory. `datasqrl-agent.sh` derives
 the project and its mounts from the current directory (`git rev-parse --show-prefix`), so launching
 from the repository root instead treats the whole repo as one project and makes all of it writable.
 
@@ -24,20 +24,20 @@ When any of the three fails, tell the user which condition the request misses an
 
 For such a change `patch` is the whole workflow: one run, straight to implementation. The request string is the requirement, and the agent container writes it to `adr/requirements_<ts>.md` at runtime.
 
-**Working directory**: run `codeagent.sh` in the project directory, the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to.
+**Working directory**: run `datasqrl-agent.sh` in the project directory, the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to.
 
 ## Step 1 — start the run
 
 The launch command starts a detached container and returns in about two seconds, printing the run name. Launch once, in the foreground, with the default timeout. The container is owned by the Docker daemon and keeps running after this session is interrupted or closed.
 
 ```bash
-CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
-[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh   # fall back to PATH
+CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
+[ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
 bash "$CODEAGENT" "$ARGUMENTS" --mode patch --detach
 ```
 
-- **Run the first two lines exactly as written.** They locate the launcher (`codeagent.sh`).
+- **Run the first two lines exactly as written.** They locate the launcher (`datasqrl-agent.sh`).
 - Pass the user's request as `$ARGUMENTS`, a single quoted string. Include the context user gave you, in particular anything they already changed by hand. The container sees only this string.
 - The printed run name confirms the container **started**.
 - A non-zero exit means the run never started — failed preflight (Docker down, image missing, no credential), or a run already in progress for this project. Report that message verbatim and end the turn.

@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Skill
 ---
 Run the DataSQRL Code Agent in **planning** mode on the current project.
 
-**Working directory**: run `codeagent.sh` in the project directory — the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to. `adr/` is resolved relative to that directory.
+**Working directory**: run `datasqrl-agent.sh` in the project directory — the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to. `adr/` is resolved relative to that directory.
 
 **Precondition:** the requirements come from the user — a file they wrote or approved, or text they gave you. When no requirements document exists yet, use the [`requirements` skill](../requirements/SKILL.md) first.
 
@@ -15,13 +15,13 @@ Run the DataSQRL Code Agent in **planning** mode on the current project.
 The launch command starts a detached container and returns in about two seconds, printing the run name. Launch once, in the foreground, with the default timeout. The container is owned by the Docker daemon and keeps running after this session is interrupted or closed.
 
 ```bash
-CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
-[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh   # fall back to PATH
+CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
+[ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
 bash "$CODEAGENT" "$ARGUMENTS" --mode planning --detach
 ```
 
-- **Run the first two lines exactly as written.** They locate the launcher (`codeagent.sh`).
+- **Run the first two lines exactly as written.** They locate the launcher (`datasqrl-agent.sh`).
 - `$ARGUMENTS` is inline requirements text, or a path to a requirements file inside the project (adr/requirements_<>.md). When it is a path, confirm the file exists before launching.
 - Pass `$ARGUMENTS` verbatim and launch immediately. The planning agent records its own assumptions for anything the requirements leave unspecified.
 - The printed run name confirms the container **started**.

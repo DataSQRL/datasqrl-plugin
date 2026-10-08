@@ -52,7 +52,7 @@ The run belongs to the Docker daemon, not to your session, which means:
 - **Close the session, interrupt your agent, reboot your editor** — the run finishes anyway and
   still writes `.code_agent_results.json`.
 - **You follow it from another terminal.** The launch prints the command, `tail -f` on the run's progress log, that shows what the agent is doing as it happens. Ask your agent whether it is still going, what the output means, or to stop it (`progress`).
-- **Your agent learns when it ends.** Right after the launch, the agent starts `codeagent.sh --wait` in the background. That command waits for the run and prints the result when the run ends, so the agent reports back on its own. You can still ask at any time (`progress`).
+- **Your agent learns when it ends.** Right after the launch, the agent starts `datasqrl-agent.sh --wait` in the background. That command waits for the run and prints the result when the run ends, so the agent reports back on its own. You can still ask at any time (`progress`).
 - **`progress` works from anywhere** — a different session, hours later, on a run you did not start.
 - **One run at a time per project.** A second implement on the same project is refused while the
   first is going, so two agents can never interleave edits to the same files. Different projects
@@ -76,7 +76,7 @@ The run belongs to the Docker daemon, not to your session, which means:
 - **A bash shell.** Every skill shells out to one of the `scripts/*.sh`, so on Windows use
   **WSL**, which is the tested path. Git Bash runs `datasqrl-cloud.sh` but is **not** enough for
   the containerized agent: MSYS rewrites the `-v <host>:/workspace` mount arguments in
-  `codeagent.sh`, and `git rev-parse --show-toplevel` yields `/c/Users/…` where Docker Desktop
+  `datasqrl-agent.sh`, and `git rev-parse --show-toplevel` yields `/c/Users/…` where Docker Desktop
   wants `C:/Users/…`.
 
 For `resolve-issue` only:
@@ -132,7 +132,7 @@ git clone https://github.com/DataSQRL/datasqrl-plugin
 ```
 
 That copies the skills into `.github/skills/` and `.agents/skills/`. The skills invoke
-`codeagent.sh` by name, so it must be on your `PATH` — the installer tells you how.
+`datasqrl-agent.sh` by name, so it must be on your `PATH` — the installer tells you how.
 
 ## Updating
 
@@ -162,7 +162,7 @@ The repository root is simultaneously the marketplace root, the plugin root, and
 .codex-plugin/plugin.json
 .cursor-plugin/plugin.json
 skills/<name>/SKILL.md          ← one shared tree, all three manifests point at it
-scripts/codeagent.sh            ← byte-identical copy of agent/codeagent.sh (CI-enforced)
+scripts/datasqrl-agent.sh            ← byte-identical copy of agent/datasqrl-agent.sh (CI-enforced)
 scripts/datasqrl-cloud.sh       ← DataSQRL Cloud API client; lives only here
 install-skills.sh               ← Copilot only
 ```
@@ -177,7 +177,7 @@ scan. (That same rule is what would let a second plugin entry carve out its own 
 
 ### Local development
 
-In the source repo, **`agent/codeagent.sh` is canonical** and `scripts/codeagent.sh` is a
+In the source repo, **`agent/datasqrl-agent.sh` is canonical** and `scripts/datasqrl-agent.sh` is a
 byte-identical copy. After editing the launcher:
 
 ```bash
@@ -212,7 +212,7 @@ Edits to a `SKILL.md` take effect immediately — no reload needed.
 **Two things that have bitten this plugin before:**
 
 1. **After a stale install, `scripts/` can be empty.** Any plugin cached before the launcher became
-   a real file has an empty `scripts/` directory, and every skill fails to find `codeagent.sh`.
+   a real file has an empty `scripts/` directory, and every skill fails to find `datasqrl-agent.sh`.
    Check the installed copy rather than the source tree:
    ```bash
    ls -l ~/.claude/plugins/cache/datasqrl/datasqrl/*/scripts/
@@ -228,9 +228,9 @@ Edits to a `SKILL.md` take effect immediately — no reload needed.
    So the skills must use the bare placeholder. Any shell-flavoured variant — `${CLAUDE_PLUGIN_ROOT:+…}`,
    `$CLAUDE_PLUGIN_ROOT` without braces, a default like `${CLAUDE_PLUGIN_ROOT:-…}` — does **not**
    match what Claude Code substitutes, reaches the model unchanged, and then expands to nothing in
-   the shell. The symptom is a path starting at `/scripts/...` or a bare `codeagent.sh`, and the
+   the shell. The symptom is a path starting at `/scripts/...` or a bare `datasqrl-agent.sh`, and the
    agent hard-coding an absolute path to recover.
 
-   The second line (`[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh`) is what makes the same snippet
+   The second line (`[ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh`) is what makes the same snippet
    work in Codex/Cursor/Copilot, where the placeholder is never substituted and the launcher comes
    from `PATH`.

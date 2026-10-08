@@ -52,8 +52,8 @@ In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements
 Run this once, at the start. It is a no-op when the image is already present:
 
 ```bash
-CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/codeagent.sh"
-[ -f "$CODEAGENT" ] || CODEAGENT=codeagent.sh   # fall back to PATH
+CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
+[ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
 bash "$CODEAGENT" --image-exists || bash "$CODEAGENT" --pull-image
 ```
