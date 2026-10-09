@@ -1,18 +1,5 @@
 #!/bin/bash
-#
-# TWO BYTE-IDENTICAL COPIES OF THIS FILE EXIST. Edit only the first:
-#
-#   agent/datasqrl-agent.sh                     <- canonical; edit this one
-#   datasqrl-plugin/scripts/datasqrl-agent.sh   <- copy shipped inside the plugin
-#
-# then run:  ./agent/sync-launcher.sh
-#
-# CI fails if they differ, so the copy cannot drift silently. A symlink would be
-# the obvious way to avoid the duplication, and it does not work: Claude Code,
-# Codex and Cursor all COPY a plugin into a local cache on install, and a
-# relative symlink whose target lives outside the plugin directory is dropped by
-# that copy — the installed plugin ends up with an empty scripts/ and every skill
-# fails to find this launcher.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Run DataSQRL Code Agent with local or cloud MCP server.
 # Run this script from the workspace directory containing your DataSQRL project.
@@ -1091,12 +1078,22 @@ GATE_WS="$CONTAINER_WORKSPACE"
 # Capture host identifiers for log correlation across planning/implementation runs
 HOST_WORKSPACE_FOLDER=$(basename "$HOST_WS")
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    HOST_MAC_ID=$(ifconfig en0 2>/dev/null | awk '/ether/{print $2; exit}')
-    [ -z "$HOST_MAC_ID" ] && HOST_MAC_ID=$(ifconfig 2>/dev/null | awk '/ether/{print $2; exit}')
+    _mac=$(ifconfig en0 2>/dev/null | awk '/ether/{print $2; exit}')
+    [ -z "$_mac" ] && _mac=$(ifconfig 2>/dev/null | awk '/ether/{print $2; exit}')
 else
-    HOST_MAC_ID=$(ip link show 2>/dev/null | awk '/link\/ether/{print $2; exit}')
-    [ -z "$HOST_MAC_ID" ] && HOST_MAC_ID=$(cat /sys/class/net/"$(ls /sys/class/net/ 2>/dev/null | grep -v lo | head -1)"/address 2>/dev/null)
+    _mac=$(ip link show 2>/dev/null | awk '/link\/ether/{print $2; exit}')
+    if [ -z "$_mac" ]; then
+        # The first interface with a real address; /sys/class/net also holds files such as
+        # bonding_masters and tunnels whose address is all zeros.
+        for _if in /sys/class/net/*; do
+            [ "${_if##*/}" = lo ] && continue
+            _mac=$(cat "$_if/address" 2>/dev/null)
+            case "$_mac" in ""|00:00:00:00:00:00) _mac="" ;; *) break ;; esac
+        done
+    fi
 fi
+HOST_MAC_ID="$_mac"
+unset _mac _if
 
 # Build docker arguments.
 # --name is the per-project lock (see "Run identity" above) and is applied in BOTH modes on

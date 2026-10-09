@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Install the DataSQRL skills into a repository for coding agents that have no plugin system.
 #
 # Claude Code, Codex and Cursor all install this directory as a PLUGIN and do not need this
@@ -51,7 +52,7 @@ else
 NOTE: datasqrl-agent.sh is not on your PATH, and the skills invoke it by that name.
 Install it with:
 
-  curl -fsSL https://raw.githubusercontent.com/DataSQRL/datasqrl-plugin/main/scripts/datasqrl-agent.sh \\
+  curl -fsSL https://github.com/DataSQRL/datasqrl-plugin/releases/latest/download/datasqrl-agent.sh \\
     -o /usr/local/bin/datasqrl-agent.sh && chmod +x /usr/local/bin/datasqrl-agent.sh
 EOF
 fi

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 #
 # DataSQRL Cloud API client for the `deploy` skill.
 #

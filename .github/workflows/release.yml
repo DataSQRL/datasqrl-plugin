@@ -1,0 +1,36 @@
+name: Release
+
+# Runs when a release is published on the GitHub Releases page. It checks the plugin, confirms the
+# release tag is the manifest version, and attaches both scripts, so that
+#   https://github.com/DataSQRL/datasqrl-plugin/releases/latest/download/datasqrl-agent.sh
+# always serves the launcher of the newest release.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Attach scripts to the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Check the plugin and the tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: .github/check-plugin.sh --tag "$TAG"
+
+      - name: Attach the scripts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG" \
+            scripts/datasqrl-agent.sh scripts/datasqrl-cloud.sh --clobber
