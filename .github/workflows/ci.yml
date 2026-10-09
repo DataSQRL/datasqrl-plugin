@@ -9,8 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: Check plugin
+  # The DataSQRL organization ruleset requires a status check named "build" on main.
+  build:
+    name: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
