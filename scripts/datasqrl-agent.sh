@@ -39,8 +39,18 @@
 #   --pull-image    Pull the selected edition's image, or update it when a newer build exists.
 #                   Starts no run.
 #   --image-exists  Print whether the selected edition's image is local; exit 0 or 1. Never pulls.
+#   --show-options [ID]  Print the harnesses, providers and default models the selected image offers,
+#                   which variables each provider needs, and whether each is set (never a value).
+#                   With ID or --provider ID, that provider alone. Takes --harness for another
+#                   harness's providers.
+#                   Never pulls.
+#   --check-config  Print the harness, provider and model a run would use (--harness, --provider,
+#                   --model and the environment applied) and whether their credentials are ready.
+#                   For Bedrock it also checks the AWS profile: it lists the profiles when none is
+#                   set and names the login command when the SSO login has expired. Ends with
+#                   Status READY or NOT READY; exits 0 or 1. Never pulls, never prints a value.
 #
-# The image flags work in any directory and take no other argument. The edition is os unless
+# The image flags work in any directory. --pull-image and --image-exists take no other argument. The edition is os unless
 # DATASQRL_AGENT_EDITION=pro, DATASQRL_PRO_TOKEN is set, or pro-agent:latest is already exist.
 # DATASQRL_PRO_TOKEN is a GitHub token with read:packages; it unlocks the private pro image.
 #
@@ -243,20 +253,264 @@ do_image_exists() {
     return 1
 }
 
+# --- Model provider settings -------------------------------------------------------------------
+# Sets PROVIDER_ENV_ARGS to the `-e NAME` arguments that forward provider settings into a container.
+provider_env_args() {
+    # The container gets these variables by NAME and nothing else from the host environment. The
+    # agent runs arbitrary shell commands and its log can be uploaded to remote storage, so an
+    # unrelated secret in the caller's shell has no business inside it. Host PATH, HOME and JAVA_HOME
+    # would also replace the image's own values.
+    #
+    # `-e NAME` copies the host value only when the variable is set, and keeps the value out of the
+    # `docker run` argument list that `ps` shows.
+    #
+    # The Pi names follow https://pi.dev/docs/latest/providers. test-docker-local.sh checks every
+    # variable the image's Pi documents against this list, so a Pi upgrade cannot drift from it.
+    PROVIDER_ENV_VARS=(
+      # Anthropic and Anthropic-compatible endpoints
+      ANTHROPIC_API_KEY ANTHROPIC_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
+      ANTHROPIC_CUSTOM_HEADERS CLAUDE_CODE_OAUTH_TOKEN
+      # Anthropic workload identity federation (Pi only; the judges still need a key or login)
+      ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID ANTHROPIC_IDENTITY_TOKEN_FILE
+      ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_WORKSPACE_ID
+      # Pi providers with a single API key
+      ANT_LING_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY NVIDIA_API_KEY GEMINI_API_KEY
+      COPILOT_GITHUB_TOKEN MISTRAL_API_KEY GROQ_API_KEY CEREBRAS_API_KEY XAI_API_KEY
+      OPENROUTER_API_KEY AI_GATEWAY_API_KEY ZAI_API_KEY ZAI_CODING_CN_API_KEY OPENCODE_API_KEY
+      RADIUS_API_KEY TYPESAFE_API_KEY HF_TOKEN FIREWORKS_API_KEY TOGETHER_API_KEY BASETEN_API_KEY
+      KIMI_API_KEY META_API_KEY MINIMAX_API_KEY MINIMAX_CN_API_KEY MOONSHOT_API_KEY
+      QWEN_TOKEN_PLAN_API_KEY QWEN_TOKEN_PLAN_CN_API_KEY XIAOMI_API_KEY
+      XIAOMI_TOKEN_PLAN_CN_API_KEY XIAOMI_TOKEN_PLAN_AMS_API_KEY XIAOMI_TOKEN_PLAN_SGP_API_KEY
+      # Azure OpenAI
+      AZURE_OPENAI_API_KEY AZURE_OPENAI_BASE_URL AZURE_OPENAI_RESOURCE_NAME
+      # Amazon Bedrock (with DATASQRL_TELEMETRY=1, the access keys also upload the run log)
+      AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK
+      AWS_PROFILE AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN AWS_ROLE_SESSION_NAME
+      AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+      # Google Vertex AI
+      GOOGLE_CLOUD_API_KEY GOOGLE_CLOUD_PROJECT GCLOUD_PROJECT GOOGLE_CLOUD_LOCATION
+      GOOGLE_APPLICATION_CREDENTIALS
+      # Cloudflare AI Gateway and Workers AI
+      CLOUDFLARE_API_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_GATEWAY_ID
+      # Claude Code's own cloud modes (--agent claude-code)
+      CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
+      ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION
+      ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_FOUNDRY_BASE_URL
+      # Model selection, the environment form of --model and --provider
+      DATASQRL_AGENT_MODEL DATASQRL_AGENT_PROVIDER
+      # Telemetry, opt-in and off by default: uploads the run log for troubleshooting and debugging
+      DATASQRL_TELEMETRY
+      # Claude Code on Bedrock with a credential no variable names (an EC2 instance role)
+      DATASQRL_AGENT_AWS_CHAIN
+    )
+    # ECS task credentials come as a family of variables that share this prefix.
+    while IFS= read -r _name; do
+      PROVIDER_ENV_VARS+=("$_name")
+    done < <(compgen -e | grep '^AWS_CONTAINER_CREDENTIALS_')
+
+    # DATASQRL_AGENT_PASS_ENV adds names this list lacks, comma-separated: a newer Pi provider, or a
+    # custom provider's key from ~/.pi/agent/models.json.
+    IFS=',' read -r -a _extra_env <<< "${DATASQRL_AGENT_PASS_ENV:-}"
+    for _name in "${_extra_env[@]}"; do
+      _name="${_name// /}"
+      [ -z "$_name" ] && continue
+      if [[ ! "$_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        echo "Error: DATASQRL_AGENT_PASS_ENV holds '$_name', which is not a variable name." >&2
+        exit 1
+      fi
+      PROVIDER_ENV_VARS+=("$_name")
+    done
+
+    PROVIDER_ENV_ARGS=()
+    for _name in "${PROVIDER_ENV_VARS[@]}"; do
+      [ -n "${!_name+set}" ] && PROVIDER_ENV_ARGS+=(-e "$_name")
+    done
+}
+
+# --- AWS profiles --------------------------------------------------------------------------------
+is_sso_profile() {
+    aws configure get sso_session --profile "$1" >/dev/null 2>&1 \
+        || aws configure get sso_start_url --profile "$1" >/dev/null 2>&1
+}
+
+# Prints one profile's non-secret fields from the AWS config file: account, role and region.
+aws_profile_fields() {
+    local _cfg="${AWS_CONFIG_FILE:-$HOME/.aws/config}"
+    [ -f "$_cfg" ] || return 0
+    awk -v want="$1" '
+        /^[ \t]*\[/ { s = $0; gsub(/^[ \t]*\[(profile[ \t]+)?|\][ \t]*$/, "", s); next }
+        s == want && /=/ {
+            k = $0; sub(/[ \t]*=.*/, "", k); gsub(/^[ \t]+/, "", k)
+            v = $0; sub(/^[^=]*=[ \t]*/, "", v)
+            if (k == "sso_account_id") a = "account " v
+            if (k == "sso_role_name")  r = "role " v
+            if (k == "region")         g = "region " v
+        }
+        END { out = a; if (r != "") out = out (out != "" ? " · " : "") r
+              if (g != "") out = out (out != "" ? " · " : "") g; print out }
+    ' "$_cfg"
+}
+
+# The AWS lines of --check-config. AWS is only checked when the run needs it: a Bedrock provider or
+# an opted-in log upload, the same rule a run applies. Returns 1 when no usable AWS credential is
+# found. AWS_PROFILE is then unset, so the image reports it missing too, as a run would see it.
+check_aws() {
+    if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        echo "AWS                access keys from your shell (they take precedence over AWS_PROFILE)"
+        unset AWS_PROFILE
+        return 0
+    fi
+    if [ -n "${AWS_BEARER_TOKEN_BEDROCK:-}" ]; then
+        echo "AWS                a Bedrock API key from your shell (AWS_BEARER_TOKEN_BEDROCK)"
+        return 0
+    fi
+    if ! command -v aws >/dev/null 2>&1; then
+        echo "AWS                a profile needs the AWS CLI v2, which is not installed"
+        echo "  → install it: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        unset AWS_PROFILE
+        return 1
+    fi
+    if [ -z "${AWS_PROFILE:-}" ]; then
+        local _p _f _any=0
+        echo "AWS                no AWS_PROFILE is set. Profiles on this machine:"
+        while IFS= read -r _p; do
+            [ -n "$_p" ] || continue
+            _any=1
+            _f="$(aws_profile_fields "$_p")"
+            printf '  %-28s %s\n' "$_p" "${_f:-no account, role or region recorded}"
+        done < <(aws configure list-profiles 2>/dev/null)
+        if [ "$_any" = "1" ]; then
+            echo "  → ask the user which profile is for DataSQRL, then run with AWS_PROFILE=<name>"
+        else
+            echo "  (none)"
+            echo "  → ask the user to set up a profile (aws configure sso), or to set access keys"
+        fi
+        return 1
+    fi
+    local _account _region
+    if _account="$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query Account --output text 2>/dev/null)" \
+       && [ -n "$_account" ]; then
+        _region="${AWS_REGION:-$(aws configure get region --profile "$AWS_PROFILE" 2>/dev/null)}"
+        echo "AWS                profile $AWS_PROFILE · account $_account · region ${_region:-us-east-1}"
+        return 0
+    fi
+    if is_sso_profile "$AWS_PROFILE"; then
+        echo "AWS                profile $AWS_PROFILE: the SSO login is missing or expired"
+        echo "  → ask the user to run: aws sso login --profile $AWS_PROFILE"
+    else
+        echo "AWS                profile $AWS_PROFILE gives no usable credential"
+        echo "  → see why with: aws sts get-caller-identity --profile $AWS_PROFILE"
+    fi
+    unset AWS_PROFILE
+    return 1
+}
+
+# --check-config: the harness, provider and model a run would use and whether its credentials are
+# ready. The image answers for its variables; the AWS check runs here, because the profile and its
+# login live on this machine and never enter the container. Exits 0 when ready and 1 when not.
+do_check_config() {
+    local _img _provider="${DATASQRL_AGENT_PROVIDER:-}" _take=0 _a _out _rc _aws_ok=1 _aws_lines=""
+    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
+        _img="$DATASQRL_AGENT_IMAGE"
+        if ! docker image inspect "$_img" >/dev/null 2>&1; then
+            echo "Error: image '$_img' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
+            return 1
+        fi
+    else
+        resolve_edition
+        _img="$LOCAL_IMAGE"
+        if ! docker image inspect "$_img" >/dev/null 2>&1; then
+            echo "Error: $_img ($RUN_EDITION edition) is not here yet. Get it first:" >&2
+            echo "  datasqrl-agent.sh --pull-image" >&2
+            return 1
+        fi
+    fi
+    for _a in "$@"; do
+        if [ "$_take" = "1" ]; then _provider="$_a"; _take=0; continue; fi
+        case "$_a" in
+            --provider)   _take=1 ;;
+            --provider=*) _provider="${_a#--provider=}" ;;
+        esac
+    done
+    case "$_provider" in
+        amazon-bedrock|bedrock) _aws_lines="$(check_aws)" || _aws_ok=0 ;;
+        *)
+            if [ "${DATASQRL_TELEMETRY:-}" = "1" ]; then
+                _aws_lines="$(check_aws)" || _aws_ok=0
+            fi
+            ;;
+    esac
+    # check_aws ran in a subshell, so its unset has to be repeated here before forwarding.
+    [ "$_aws_ok" = "0" ] && unset AWS_PROFILE
+    case "$_provider" in amazon-bedrock|bedrock) ;; *) [ "${DATASQRL_TELEMETRY:-}" = "1" ] || unset AWS_PROFILE ;; esac
+
+    provider_env_args
+    _out="$(docker run --rm "${PROVIDER_ENV_ARGS[@]}" "$_img" --check-config "$@")"
+    _rc=$?
+    printf 'Image              %s · %s\n' "$_img" "$(image_summary "$_img")"
+    if ! printf '%s\n' "$_out" | grep -q '^Status '; then
+        [ -n "$_out" ] && printf '%s\n' "$_out"
+        return "$_rc"
+    fi
+    printf '%s\n' "$_out" | grep -v '^Status '
+    [ -n "$_aws_lines" ] && printf '%s\n' "$_aws_lines"
+    if [ "$_rc" = "0" ] && [ "$_aws_ok" = "1" ]; then
+        echo "Status             READY"
+        return 0
+    fi
+    echo "Status             NOT READY"
+    return 1
+}
+
+# --show-options [ID]: the harnesses, providers and defaults the image offers, answered by the image
+# itself. The launcher names no harness or provider, so it says nothing the image does not.
+# Provider settings reach the container by name, as for a run, so the image can say which are set.
+# It never pulls: a 3GB download is not a side effect of a question.
+do_show_options() {
+    local _img
+    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
+        _img="$DATASQRL_AGENT_IMAGE"
+        if ! docker image inspect "$_img" >/dev/null 2>&1; then
+            echo "Error: image '$_img' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
+            return 1
+        fi
+    else
+        resolve_edition
+        _img="$LOCAL_IMAGE"
+        if ! docker image inspect "$_img" >/dev/null 2>&1; then
+            echo "Error: $_img ($RUN_EDITION edition) is not here yet. Get it first:" >&2
+            echo "  datasqrl-agent.sh --pull-image" >&2
+            return 1
+        fi
+    fi
+    provider_env_args
+    printf 'Image              %s · %s\n' "$_img" "$(image_summary "$_img")"
+    docker run --rm "${PROVIDER_ENV_ARGS[@]}" "$_img" --show-options ${OPTIONS_ID:+"$OPTIONS_ID"} "$@"
+}
+
 # --- Argument partitioning ---------------------------------------------------------------------
 # Lifetime flags are consumed here and MUST NOT reach the Python CLI, which does not know them.
 # Everything else is left in place for the requirements/forwarding split below.
 DETACH=0
 ACTION="run"
 TAIL_N=0          # --status N: print the last N trail lines before the status line
+OPTIONS_ID=""     # --show-options ID: one provider instead of the list
 REST_ARGS=()
 _after_status=0
+_after_options=0
 for _arg in "$@"; do
     if [ "$_after_status" = "1" ]; then
         _after_status=0
         case "$_arg" in
             *[!0-9]*|'') ;;                    # not a number: plain --status
             *) TAIL_N="$_arg"; continue ;;
+        esac
+    fi
+    if [ "$_after_options" = "1" ]; then
+        _after_options=0
+        case "$_arg" in
+            -*) ;;                             # a flag: plain --show-options
+            *)  OPTIONS_ID="$_arg"; continue ;;
         esac
     fi
     case "$_arg" in
@@ -266,6 +520,8 @@ for _arg in "$@"; do
         --wait)   ACTION="wait" ;;
         --pull-image)   ACTION="pull-image" ;;
         --image-exists) ACTION="image-exists" ;;
+        --show-options) ACTION="show-options"; _after_options=1 ;;
+        --check-config) ACTION="check-config" ;;
         *)        REST_ARGS+=("$_arg") ;;
     esac
 done
@@ -274,6 +530,51 @@ set -- "${REST_ARGS[@]}"
 # The image actions run before the repository check: they touch no project, so they work from
 # any directory, including before a project exists.
 case "$ACTION" in
+    check-config)
+        # It takes the choices a run takes, and answers for them.
+        _take_value=0
+        for _a in "$@"; do
+            if [ "$_take_value" = "1" ]; then _take_value=0; continue; fi
+            case "$_a" in
+                --agent|--harness|--provider|--model) _take_value=1 ;;
+                --agent=*|--harness=*|--provider=*|--model=*) ;;
+                *)
+                    echo "Error: --check-config takes --harness, --provider and --model, not '$_a'." >&2
+                    exit 1
+                    ;;
+            esac
+        done
+        if [ "$DETACH" = "1" ]; then
+            echo "Error: --check-config starts no run, so --detach does not apply." >&2
+            exit 1
+        fi
+        require_docker
+        do_check_config "$@"
+        exit $?
+        ;;
+    show-options)
+        # The menu differs per harness, so it takes --harness. --provider names the provider to
+        # show, the same as an id after the flag.
+        _take_value=0
+        for _a in "$@"; do
+            if [ "$_take_value" = "1" ]; then _take_value=0; continue; fi
+            case "$_a" in
+                --agent|--harness|--provider) _take_value=1 ;;
+                --agent=*|--harness=*|--provider=*) ;;
+                *)
+                    echo "Error: --show-options takes a provider id, --provider and --harness, not '$_a'." >&2
+                    exit 1
+                    ;;
+            esac
+        done
+        if [ "$DETACH" = "1" ]; then
+            echo "Error: --show-options starts no run, so --detach does not apply." >&2
+            exit 1
+        fi
+        require_docker
+        do_show_options "$@"
+        exit $?
+        ;;
     pull-image|image-exists)
         if [ $# -gt 0 ] || [ "$DETACH" = "1" ]; then
             echo "Error: --$ACTION takes no other arguments." >&2
@@ -632,11 +933,6 @@ fi
 # The container never gets ~/.aws: that folder can hold long-lived keys and an SSO login for every
 # account and role, and the agent runs shell commands.
 
-is_sso_profile() {
-    aws configure get sso_session --profile "$1" >/dev/null 2>&1 \
-        || aws configure get sso_start_url --profile "$1" >/dev/null 2>&1
-}
-
 # Exports a temporary credential for AWS_PROFILE into this process, plus AWS_REGION.
 # An expired or missing login stops the run before it starts, naming the command that fixes it.
 export_aws_profile_credentials() {
@@ -829,74 +1125,9 @@ if [ "$CLAUDE_LOGIN_NEEDED" = "1" ] && [ -f "$CREDENTIALS_FILE" ]; then
 fi
 
 # --- Model provider settings -------------------------------------------------------------------
-# The container gets these variables by NAME and nothing else from the host environment. The
-# agent runs arbitrary shell commands and its log can be uploaded to remote storage, so an
-# unrelated secret in the caller's shell has no business inside it. Host PATH, HOME and JAVA_HOME
-# would also replace the image's own values.
-#
-# `-e NAME` copies the host value only when the variable is set, and keeps the value out of the
-# `docker run` argument list that `ps` shows.
-#
-# The Pi names follow https://pi.dev/docs/latest/providers. test-docker-local.sh checks every
-# variable the image's Pi documents against this list, so a Pi upgrade cannot drift from it.
-PROVIDER_ENV_VARS=(
-  # Anthropic and Anthropic-compatible endpoints
-  ANTHROPIC_API_KEY ANTHROPIC_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
-  ANTHROPIC_CUSTOM_HEADERS CLAUDE_CODE_OAUTH_TOKEN
-  # Anthropic workload identity federation (Pi only; the judges still need a key or login)
-  ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID ANTHROPIC_IDENTITY_TOKEN_FILE
-  ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_WORKSPACE_ID
-  # Pi providers with a single API key
-  ANT_LING_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY NVIDIA_API_KEY GEMINI_API_KEY
-  COPILOT_GITHUB_TOKEN MISTRAL_API_KEY GROQ_API_KEY CEREBRAS_API_KEY XAI_API_KEY
-  OPENROUTER_API_KEY AI_GATEWAY_API_KEY ZAI_API_KEY ZAI_CODING_CN_API_KEY OPENCODE_API_KEY
-  RADIUS_API_KEY TYPESAFE_API_KEY HF_TOKEN FIREWORKS_API_KEY TOGETHER_API_KEY BASETEN_API_KEY
-  KIMI_API_KEY META_API_KEY MINIMAX_API_KEY MINIMAX_CN_API_KEY MOONSHOT_API_KEY
-  QWEN_TOKEN_PLAN_API_KEY QWEN_TOKEN_PLAN_CN_API_KEY XIAOMI_API_KEY
-  XIAOMI_TOKEN_PLAN_CN_API_KEY XIAOMI_TOKEN_PLAN_AMS_API_KEY XIAOMI_TOKEN_PLAN_SGP_API_KEY
-  # Azure OpenAI
-  AZURE_OPENAI_API_KEY AZURE_OPENAI_BASE_URL AZURE_OPENAI_RESOURCE_NAME
-  # Amazon Bedrock (with DATASQRL_TELEMETRY=1, the access keys also upload the run log)
-  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK
-  AWS_PROFILE AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN AWS_ROLE_SESSION_NAME
-  AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
-  # Google Vertex AI
-  GOOGLE_CLOUD_API_KEY GOOGLE_CLOUD_PROJECT GCLOUD_PROJECT GOOGLE_CLOUD_LOCATION
-  GOOGLE_APPLICATION_CREDENTIALS
-  # Cloudflare AI Gateway and Workers AI
-  CLOUDFLARE_API_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_GATEWAY_ID
-  # Claude Code's own cloud modes (--agent claude-code)
-  CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
-  ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION
-  ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_FOUNDRY_BASE_URL
-  # Model selection, the environment form of --model and --provider
-  DATASQRL_AGENT_MODEL DATASQRL_AGENT_PROVIDER
-  # Telemetry, opt-in and off by default: uploads the run log for troubleshooting and debugging
-  DATASQRL_TELEMETRY
-  # Claude Code on Bedrock with a credential no variable names (an EC2 instance role)
-  DATASQRL_AGENT_AWS_CHAIN
-)
-# ECS task credentials come as a family of variables that share this prefix.
-while IFS= read -r _name; do
-  PROVIDER_ENV_VARS+=("$_name")
-done < <(compgen -e | grep '^AWS_CONTAINER_CREDENTIALS_')
-
-# DATASQRL_AGENT_PASS_ENV adds names this list lacks, comma-separated: a newer Pi provider, or a
-# custom provider's key from ~/.pi/agent/models.json.
-IFS=',' read -r -a _extra_env <<< "${DATASQRL_AGENT_PASS_ENV:-}"
-for _name in "${_extra_env[@]}"; do
-  _name="${_name// /}"
-  [ -z "$_name" ] && continue
-  if [[ ! "$_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-    echo "Error: DATASQRL_AGENT_PASS_ENV holds '$_name', which is not a variable name." >&2
-    exit 1
-  fi
-  PROVIDER_ENV_VARS+=("$_name")
-done
-
-for _name in "${PROVIDER_ENV_VARS[@]}"; do
-  [ -n "${!_name+set}" ] && DOCKER_ARGS+=(-e "$_name")
-done
+# Forwarded by name; see provider_env_args.
+provider_env_args
+DOCKER_ARGS+=("${PROVIDER_ENV_ARGS[@]}")
 
 # Variables that hold a PATH need the file too. It is mounted read-only at the same path, so the
 # variable stays valid inside the container unchanged.

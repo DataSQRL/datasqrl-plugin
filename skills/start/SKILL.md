@@ -31,8 +31,8 @@ There are two lanes, and this section takes them in order:
 
 | | Step 1 · Setup | Step 2 · Route | Step 3 · Run |
 |---|---|---|---|
-| **Lane A — Patch** | image + git location | small, fully-determined change | one `patch` run |
-| **Lane B — Full workflow** | image + git location | anything that needs designing | `requirements` (optional-depending on the user request) → `plan` → `implement` |
+| **Lane A — Patch** | image + git location + run choices | small, fully-determined change | one `patch` run |
+| **Lane B — Full workflow** | image + git location + run choices | anything that needs designing | `requirements` (optional-depending on the user request) → `plan` → `implement` |
 
 ## File ownership
 
@@ -47,24 +47,29 @@ In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements
 
 ## Step 1 — Setup (both lanes A&B, before routing)
 
-### 1a. Make sure the agent image is here
+### 1a. Make sure the right agent image is here
 
-Run this once, at the start. It is a no-op when the image is already present:
+The agent comes as two editions: the open-source edition, which anyone can pull, and the pro edition, which DataSQRL gives access to with a token. [`reference/agent-setup.md`](reference/agent-setup.md) explains how `datasqrl-agent.sh` picks it.
+
+Run this once, at the start, without prompting:
 
 ```bash
 CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
 [ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
-bash "$CODEAGENT" --image-exists || bash "$CODEAGENT" --pull-image
+bash "$CODEAGENT" --image-exists
 ```
 
-The launcher checks and pulls the edition the user has set up: pro when `DATASQRL_PRO_TOKEN` or `DATASQRL_AGENT_EDITION=pro` is set, the open-source edition otherwise.
+It prints one line naming the selected image and its edition, then:
 
-Run it without prompting. On success, continue to 1b silently.
+- **`is present · edition: … · version: …`:** tell the user in one line which edition and version this build uses, and continue to 1b.
+- **`is missing`:** ask the user which edition they want, with what each needs, from the table in [`reference/agent-setup.md`](reference/agent-setup.md#edition-which-image-runs): the open-source edition needs nothing; pro needs either the token DataSQRL gave them, set as `DATASQRL_PRO_TOKEN` in their shell profile followed by a restart of their coding agent, or their own GitHub account with pro access and a one-time `docker login ghcr.io`. Mention the edition the line named as the one currently selected. Once the user has answered and done what their edition needs, run that edition's pull command from the table.
+
+When the user mentions pro access while the open-source edition is in use, give them the same two pro routes; after the pro pull, every later command selects pro by itself.
 
 #### If it fails
 
-The launcher prints the cause and the fix. Relay its message, then apply the matching step.
+`datasqrl-agent.sh` prints the cause and the fix. Relay its message, then apply the matching step.
 
 | The message says | Meaning | What to do |
 |---|---|---|
@@ -104,6 +109,28 @@ The current directory is the default. Offer the parent instead when the user nam
 #### Mounts
 
 The repository is bind-mounted, so the agent's writes land in the user's real files. The invocation directory is the only writable mount; the rest of the repository (sibling projects or shared data catalog) is mounted read-only for reference. Invoke from the project directory.
+
+### 1c. Settle the run choices
+
+A run takes three choices: the harness, the model provider and the model. Settle them once per conversation, before the first run, and remember them for the rest of this conversation; nothing writes them to disk. Read [`reference/agent-setup.md`](reference/agent-setup.md) whenever needed or the user asks about editions, providers, models, variables or AWS, when a check below reports a problem, and when a run fails to start because of a missing variable or an AWS login.
+
+For the run choices, take the source that applies:
+
+1. **The user named them** in this conversation: use those.
+2. **An earlier run in this project:** when `.code_agent_results.json` exists, ask in one line whether to reuse the `harness`, `provider` and `model` of its last run.
+3. **Otherwise, ask once.** Run `bash "$CODEAGENT" --show-options` and tell the user the default: the `anthropic` provider, with its default models for planning and implementation. Name the providers it marks `ready`, say that any provider in the list works once its variables are set, and ask which they want.
+
+The user makes each choice: the provider, the model and, for Amazon Bedrock, the AWS profile. Present the options neutrally, without promoting any provider, model or agent.
+
+Then check the choices:
+
+```bash
+bash "$CODEAGENT" --check-config [--provider <id>] [--model <model>] [--harness <name>]
+```
+
+- For Amazon Bedrock, put `AWS_PROFILE=<name>` in front of `bash` once the user has named the profile, here and on every run command.
+- `Status READY`: continue to Step 2.
+- `Status NOT READY`: follow the table in [`reference/agent-setup.md`](reference/agent-setup.md#checking-before-a-run), then run the check again. Ask the user to set every key in their own shell, and keep the values out of this conversation.
 
 ---
 

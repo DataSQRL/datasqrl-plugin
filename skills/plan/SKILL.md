@@ -18,10 +18,11 @@ The launch command starts a detached container and returns in about two seconds,
 CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
 [ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
-bash "$CODEAGENT" "$ARGUMENTS" --mode planning --detach
+bash "$CODEAGENT" "$ARGUMENTS" --mode planning --detach [run choices]
 ```
 
 - **Run the first two lines exactly as written.** They locate the launcher (`datasqrl-agent.sh`).
+- **Run choices:** run with the choices settled during setup, as [`agent-setup.md`](../start/reference/agent-setup.md#passing-the-run-choices) describes. With none settled, add nothing: the run uses the defaults.
 - `$ARGUMENTS` is inline requirements text, or a path to a requirements file inside the project (adr/requirements_<>.md). When it is a path, confirm the file exists before launching.
 - Pass `$ARGUMENTS` verbatim and launch immediately. The planning agent records its own assumptions for anything the requirements leave unspecified.
 - The printed run name confirms the container **started**.

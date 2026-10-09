@@ -67,10 +67,8 @@ The run belongs to the Docker daemon, not to your session, which means:
   edition, a personal access token (classic) from that account with the `read:packages` scope
   works the same way. The launcher then logs in and pulls pro. Set the token in your shell, not in
   the chat with your coding agent.
-- An **Anthropic credential** — an `ANTHROPIC_API_KEY`, or a `claude login` subscription. The
-  launcher discovers either automatically.
-- **No AWS credentials needed.** The run log stays in your project. Telemetry is off by default; opt in with
-  `DATASQRL_TELEMETRY=1` and AWS keys, which shares it with DataSQRL for troubleshooting and debugging.
+- A **model provider credential**: `ANTHROPIC_API_KEY` for the default provider, or the variables of the provider you choose, such as `FIREWORKS_API_KEY` or an AWS profile for Amazon Bedrock. Set them in the shell that starts your coding agent, not in the chat with it. `datasqrl-agent.sh --show-options` lists the providers and what each needs, and `datasqrl-agent.sh --check-config` tells you whether a run is ready. Your coding agent runs both for you during setup; [`skills/start/reference/agent-setup.md`](skills/start/reference/agent-setup.md) explains them.
+- **AWS credentials only for Amazon Bedrock.** The run log stays in your project. Telemetry is off by default; opt in with `DATASQRL_TELEMETRY=1` and AWS keys, which shares it with DataSQRL for troubleshooting and debugging.
 - A **git repository**. The repo is mounted read-only so the agent can discover sibling projects
   and shared data catalogs, and your project is the only writable place.
 - **A bash shell.** Every skill shells out to one of the `scripts/*.sh`, so on Windows use

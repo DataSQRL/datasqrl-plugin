@@ -12,16 +12,18 @@ Issues filed by the DataSQRL Cloud assistant report a defect in the user's proje
 
 ## Step 1 — make sure the agent image is here
 
-Run this first, so a missing image surfaces before any of the work below. It is a no-op when the image is already present:
+Run this first, so a missing image surfaces before any of the work below:
 
 ```bash
 CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
 [ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
-bash "$CODEAGENT" --image-exists || bash "$CODEAGENT" --pull-image
+bash "$CODEAGENT" --image-exists
 ```
 
-Run it without prompting, and continue silently on success. On a failure, relay the launcher's message and follow the table in step 1a of the [`start` skill](../start/SKILL.md), which covers a stopped daemon and pro access.
+Follow step 1a of the [`start` skill](../start/SKILL.md#1a-make-sure-the-right-agent-image-is-here) for what the output says: it tells the user which edition is in use, asks which edition to download when none is here, and covers a stopped daemon and pro access.
+
+Before the first run below, settle the run choices as step 1c of the [`start` skill](../start/SKILL.md#1c-settle-the-run-choices) describes, from the project's directory.
 
 ## Step 2 — read the issue
 

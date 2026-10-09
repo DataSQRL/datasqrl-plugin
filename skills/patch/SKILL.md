@@ -34,10 +34,11 @@ The launch command starts a detached container and returns in about two seconds,
 CODEAGENT="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-agent.sh"
 [ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh   # fall back to PATH
 
-bash "$CODEAGENT" "$ARGUMENTS" --mode patch --detach
+bash "$CODEAGENT" "$ARGUMENTS" --mode patch --detach [run choices]
 ```
 
 - **Run the first two lines exactly as written.** They locate the launcher (`datasqrl-agent.sh`).
+- **Run choices:** run with the choices settled during setup, as [`agent-setup.md`](../start/reference/agent-setup.md#passing-the-run-choices) describes. With none settled, add nothing: the run uses the defaults.
 - Pass the user's request as `$ARGUMENTS`, a single quoted string. Include the context user gave you, in particular anything they already changed by hand. The container sees only this string.
 - The printed run name confirms the container **started**.
 - A non-zero exit means the run never started — failed preflight (Docker down, image missing, no credential), or a run already in progress for this project. Report that message verbatim and end the turn.
