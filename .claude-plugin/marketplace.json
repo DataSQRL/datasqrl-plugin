@@ -1,7 +1,11 @@
 {
   "name": "datasqrl",
   "description": "Build DataSQRL data pipelines from your coding agent, using the Dockerized DataSQRL Code Agent.",
-  "owner": { "name": "DataSQRL" },
+  "owner": {
+    "name": "DataSQRL",
+    "email": "contact@datasqrl.com",
+    "url": "https://datasqrl.com"
+  },
   "plugins": [
     {
       "name": "datasqrl",
