@@ -117,7 +117,7 @@ A run takes three choices: the harness, the model provider and the model. Settle
 For the run choices, take the source that applies:
 
 1. **The user named them** in this conversation: use those.
-2. **An earlier run in this project:** when `.code_agent_results.json` exists, ask in one line whether to reuse the `harness`, `provider` and `model` of its last run.
+2. **An earlier run in this project:** when `.datasqrl_agent_results.json` exists, ask in one line whether to reuse the `harness`, `provider` and `model` of its last run.
 3. **Otherwise, ask once.** Run `bash "$CODEAGENT" --show-options` and tell the user the default: the `anthropic` provider, with its default models for planning and implementation. Name the providers it marks `ready`, say that any provider in the list works once its variables are set, and ask which they want.
 
 The user makes each choice: the provider, the model and, for Amazon Bedrock, the AWS profile. Present the options neutrally, without promoting any provider, model or agent.
@@ -233,7 +233,7 @@ Condition 3 is satisfied by a statement referring to the plan just summarized �
 
 ### After any agent run
 
-The containerized agent runs its own compile → test → refine loop, plus judges in Lane B. Report the outcome it returns and end the turn. Every outcome (success, judge rejection, compile failure, test failure, error) is a finished result.
+The containerized agent runs its own compile → test → refine loop, plus judges in Lane B. Report the outcome it returns and end the turn. Every outcome (success, review notes, compile failure, test failure, error) is a finished result. Judge issues are review notes on a successful run, not a failure.
 
 The result is the end of the build. The agent does not commit the changes automatically, so the agent's work might be uncommitted in the working tree. After the agent run, express user to observe and review the changes done by agent, and then if the latest changes meet their requirements, tell them that they may commit and push the latest changes to remote remo.
 Deploying begins when the user asks for it, as a request of its own.

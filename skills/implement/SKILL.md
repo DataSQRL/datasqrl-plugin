@@ -55,6 +55,7 @@ The run is still going. Start the same `--wait` command again in the background 
 
 Do this when the background `--wait` ends with the line `No run in progress. Last result: …`, or when the user asks you how the run went (the [`progress` skill](../progress/SKILL.md) tells you whether it has finished) and it shows that the run finished.
 
-Read `.code_agent_results.json` and report success, mode, refinements, and issue score/count. If the file is absent, say so.
+Read the newest run, the first entry of `runs` in `.datasqrl_agent_results.json`, and report success, mode, refinements, `issue_score` and the counts for each severity in `issue_count`. If the file is absent, say so.
+`success` means the final iteration passed its tests. The judges' issues, each one listed in `issues`, are review notes only.
 That report is the complete deliverable, for every outcome. Stop after the report.
 The containerized agent has already run its own compile → test → judge → refine loop, so the result it returns is final and every change it made is already applied.

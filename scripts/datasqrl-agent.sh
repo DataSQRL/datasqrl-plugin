@@ -662,7 +662,7 @@ RUN_NAME="datasqrl-agent-${PROJECT_SLUG}-$(_short_hash "$PROJECT_ABS")"
 # line, `+HH:MM:SS  KIND   text`, continuation lines indented. Truncated when a run starts and left
 # in place afterwards, so the last run's trail can be revisited until the next run overwrites it.
 PROGRESS_PATH="$PROJECT_ABS/.claude/datasqrl-agent-progress.txt"
-RESULTS_PATH="$PROJECT_ABS/.code_agent_results.json"
+RESULTS_PATH="$PROJECT_ABS/.datasqrl_agent_results.json"
 
 # --- Shared helpers ----------------------------------------------------------------------------
 run_is_live() {
@@ -699,20 +699,40 @@ fmt_elapsed() {
 # before failing on the bogus `%m` operand; GNU `stat -c` fails cleanly (no stdout) on BSD.
 file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 
-# Read one field out of the pretty-printed .code_agent_results.json.
+# Read one field out of the pretty-printed results file. The newest run is first, so the first
+# match belongs to it.
 result_field() {
     [ -f "$RESULTS_PATH" ] || return 0
     grep -m1 "\"$1\"" "$RESULTS_PATH" 2>/dev/null \
         | sed 's/.*: *//; s/[",]//g; s/^ *//; s/ *$//'
 }
 
+result_issues() {
+    _score="$(result_field issue_score)"
+    case "$_score" in ''|null) return 0 ;; esac
+    awk '
+        /"issue_count": \{/ { inside = 1; next }
+        inside && /}/ { exit }
+        inside {
+            gsub(/[",]/, ""); split($0, kv, ":"); key = kv[1]; val = kv[2]
+            gsub(/ /, "", key); gsub(/ /, "", val)
+            if (key == "total") total = val
+            else counts = counts (counts == "" ? "" : ", ") val " " key
+        }
+        END { printf "%s issue(s) (%s)", total, counts }
+    ' "$RESULTS_PATH"
+    printf ' · score %s' "$_score"
+}
+
 result_summary() {
     [ -f "$RESULTS_PATH" ] || return 0
     _ok="$(result_field success)"
     if [ "$_ok" = "true" ]; then _ok="success"; else _ok="failed"; fi
-    printf '%s · %s · %s · %s refinement(s) · %s issue(s)' \
-        "$_ok" "$(result_field mode)" "$(result_field scenario)" \
-        "$(result_field refinements)" "$(result_field issue_count)"
+    printf '%s · %s · %s · %s refinement(s)' \
+        "$_ok" "$(result_field mode)" "$(result_field scenario)" "$(result_field refinements)"
+    _issues="$(result_issues)"
+    [ -n "$_issues" ] && printf ' · %s' "$_issues"
+    return 0
 }
 
 # --- Actions: status / stop / wait -------------------------------------------------------------

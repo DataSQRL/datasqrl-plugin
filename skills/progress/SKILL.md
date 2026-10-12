@@ -33,11 +33,11 @@ The trail has one line per event, `+HH:MM:SS  KIND   text`, where the stamp is t
 - `INFO` and `JUDGE`: other orchestrator messages, for example per-package judge results.
 - `WARN`: a recoverable problem, for example `tests failed, retrying`.
 - `ERROR`: a failure; `Run stopped (SIGTERM)` means someone stopped the run.
-- `DONE`: the end: `Finished · success|failed · mode · scenario · N refinement(s) · K issue(s)`.
+- `DONE`: the end: `Finished · success|failed · mode · scenario · N refinement(s) · K issue(s) (C critical, H high, M medium, L low) · score S`. `success` means the final pass passed its tests. The issues are review notes from the judges, not a run fail. Each issue is in the `issues` list of `.datasqrl_agent_results.json`.
 
 ## What an iteration is
 
-Iteration 0 implements the plan: the coding agent works through the plan's checklist, compiling and testing as it goes (every `cmd.sh test` line is one compile-and-test run while `cmd.sh compile` is a compile run only). Then the orchestrator runs the tests itself (`running tests`) and, for implementation runs, a panel of LLM judges reviews the result (`verifying`), which ends in `verified (K issues, score S)`. When the score is too high the run enters iteration 1: the agent fixes the reported issues, then tests and judges run again. `Finalizing` is the last gate, README and plan-checklist completeness. Planning and patch runs have no judge panel. An implementation usually takes 30 to 60 minutes; planning and patches take minutes.
+Iteration 0 implements the plan: the coding agent works through the plan's checklist, compiling and testing as it goes (every `cmd.sh test` line is one compile-and-test run while `cmd.sh compile` is a compile run only). Then the orchestrator runs the tests itself (`running tests`) and, for implementation runs, a panel of LLM judges reviews the result (`verifying`), which ends in `verified (K issues, score S)`. When the score is too high and a refinement remains, the run enters iteration 1: the agent fixes the reported issues, then tests and judges run again. The score decides only whether another iteration runs. `Finalizing` is the last gate, README and plan-checklist completeness. Planning and patch runs have no judge panel. An implementation usually takes 30 to 60 minutes; planning and patches take minutes.
 
 ## Stuck or working?
 
