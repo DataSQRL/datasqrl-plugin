@@ -1,6 +1,40 @@
 {
   "name": "datasqrl",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
-  "skills": "./skills/"
+  "author": {
+    "name": "DataSQRL",
+    "email": "contact@datasqrl.com",
+    "url": "https://datasqrl.com"
+  },
+  "homepage": "https://datasqrl.com",
+  "repository": "https://github.com/DataSQRL/datasqrl-plugin",
+  "license": "Apache-2.0",
+  "keywords": [
+    "datasqrl",
+    "sqrl",
+    "data-pipelines",
+    "streaming",
+    "flink",
+    "graphql"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DataSQRL",
+    "shortDescription": "Plan, build and deploy DataSQRL data pipelines",
+    "longDescription": "Describe a data pipeline in plain English. The plugin turns it into a requirements document, runs the Dockerized DataSQRL Code Agent to plan it, waits for your review, then implements, compiles, tests and verifies it. Small changes to an existing project go straight to a patch run, and finished projects deploy to DataSQRL Cloud.",
+    "developerName": "DataSQRL",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://datasqrl.com",
+    "defaultPrompt": [
+      "I want a pipeline that ingests our order events and reports daily revenue.",
+      "Plan a DataSQRL pipeline from my requirements document.",
+      "Is my DataSQRL run still going?"
+    ]
+  }
 }

@@ -95,19 +95,14 @@ For `deploy` and `promote` only:
 
 ## Install
 
-### Claude Code (Local)
-
-```
-/plugin marketplace add <absolute path to code-agent/datasqrl-plugin>
-/plugin install datasqrl@datasqrl
-```
-
 ### Claude Code
 
 ```
 /plugin marketplace add DataSQRL/datasqrl-plugin
 /plugin install datasqrl@datasqrl
 ```
+
+To install from a local clone instead, pass its absolute path to `marketplace add`.
 
 ### Codex
 
@@ -130,7 +125,13 @@ git clone https://github.com/DataSQRL/datasqrl-plugin
 ```
 
 That copies the skills into `.github/skills/` and `.agents/skills/`. The skills invoke
-`datasqrl-agent.sh` by name, so it must be on your `PATH` — the installer tells you how.
+`datasqrl-agent.sh` by name, so it must be on your `PATH`. Every release attaches the launcher, and
+this installs the latest one:
+
+```bash
+curl -fsSL https://github.com/DataSQRL/datasqrl-plugin/releases/latest/download/datasqrl-agent.sh \
+  -o /usr/local/bin/datasqrl-agent.sh && chmod +x /usr/local/bin/datasqrl-agent.sh
+```
 
 ## Updating
 
@@ -141,94 +142,24 @@ Claude Code third-party marketplaces don't auto-update by default:
 /reload-plugins
 ```
 
-No re-add or reinstall needed. Copilot users re-run `install-skills.sh`.
+No re-add or reinstall needed. Copilot users pull this repository, re-run `install-skills.sh`,
+and download the launcher again. [Releases](https://github.com/DataSQRL/datasqrl-plugin/releases)
+lists what changed in each version.
 
----
+## Data handling and telemetry
 
-## Maintainers
+The plugin has no telemetry of its own, and the agent's telemetry is off by default. A run sends
+your prompts and project code to the model provider you choose; `deploy` and `promote` talk to
+DataSQRL Cloud.
+[DATA_HANDLING.md](DATA_HANDLING.md) lists what runs where, which credentials are read, and what
+leaves your machine.
 
-The source of truth is the `datasqrl-plugin/` directory of
-**[DataSQRL/code-agent](https://github.com/DataSQRL/code-agent)**. This repo is **generated** from
-it by CI on every merge to `main` — never hand-edit it; open PRs against `code-agent`.
+## Contributing
 
-### Layout
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to test a
+change locally and the checks CI runs.
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-The repository root is simultaneously the marketplace root, the plugin root, and the skills tree:
+## License
 
-```
-.claude-plugin/{marketplace.json, plugin.json}
-.codex-plugin/plugin.json
-.cursor-plugin/plugin.json
-skills/<name>/SKILL.md          ← one shared tree, all three manifests point at it
-scripts/datasqrl-agent.sh            ← byte-identical copy of agent/datasqrl-agent.sh (CI-enforced)
-scripts/datasqrl-cloud.sh       ← DataSQRL Cloud API client; lives only here
-install-skills.sh               ← Copilot only
-```
-
-Flat on purpose: each agent looks for *its own* manifest at the root of whatever repo it is given,
-so one published repo installs in all three. The Claude marketplace entry uses `"source": "./"`.
-
-**Do not add a `skills` key to `.claude-plugin/plugin.json`.** With a marketplace-root source, a
-declared `skills` list becomes the *complete* set and the default `skills/` scan stops running —
-so adding one directory would silently hide all the others. Leaving the key out keeps the full
-scan. (That same rule is what would let a second plugin entry carve out its own subset later.)
-
-### Local development
-
-In the source repo, **`agent/datasqrl-agent.sh` is canonical** and `scripts/datasqrl-agent.sh` is a
-byte-identical copy. After editing the launcher:
-
-```bash
-./agent/sync-launcher.sh          # refresh the copy
-./agent/sync-launcher.sh --check  # what CI runs; non-zero if they differ
-```
-
-CI fails the build when they diverge, so the copy cannot drift silently.
-
-**Why a copy and not a symlink.** All three plugin hosts **copy** a plugin into a local cache on
-install, and a relative symlink pointing *outside* the plugin directory does not survive that copy —
-the installed plugin gets an empty `scripts/` and every skill fails to find the launcher. This
-repository shipped a symlink until it was caught, and local installs were silently broken by it.
-Do not reintroduce one.
-
-To trial local changes, from your `code-agent` working tree:
-
-```
-/plugin marketplace add /absolute/path/to/code-agent/datasqrl-plugin
-/plugin install datasqrl@datasqrl
-```
-
-After editing a manifest, refresh Claude Code's cached copy:
-
-```
-/plugin marketplace update datasqrl
-/reload-plugins
-```
-
-Edits to a `SKILL.md` take effect immediately — no reload needed.
-
-**Two things that have bitten this plugin before:**
-
-1. **After a stale install, `scripts/` can be empty.** Any plugin cached before the launcher became
-   a real file has an empty `scripts/` directory, and every skill fails to find `datasqrl-agent.sh`.
-   Check the installed copy rather than the source tree:
-   ```bash
-   ls -l ~/.claude/plugins/cache/datasqrl/datasqrl/*/scripts/
-   ```
-   If it is empty, reinstall: `/plugin marketplace update datasqrl` then `/reload-plugins`. Old
-   caches under a previous plugin name (e.g. `datasqrl-code-agent/0.1.0/`) are worth deleting —
-   they hold a launcher predating `--detach`, and a search-based fallback could otherwise find one.
-2. **`${CLAUDE_PLUGIN_ROOT}` is a text substitution, not a shell variable.** Claude Code replaces
-   the literal `${CLAUDE_PLUGIN_ROOT}` in *skill content* with the plugin's absolute path before the
-   model reads it. It is exported as a real environment variable only to hook processes and MCP/LSP
-   subprocesses.
-
-   So the skills must use the bare placeholder. Any shell-flavoured variant — `${CLAUDE_PLUGIN_ROOT:+…}`,
-   `$CLAUDE_PLUGIN_ROOT` without braces, a default like `${CLAUDE_PLUGIN_ROOT:-…}` — does **not**
-   match what Claude Code substitutes, reaches the model unchanged, and then expands to nothing in
-   the shell. The symptom is a path starting at `/scripts/...` or a bare `datasqrl-agent.sh`, and the
-   agent hard-coding an absolute path to recover.
-
-   The second line (`[ -f "$CODEAGENT" ] || CODEAGENT=datasqrl-agent.sh`) is what makes the same snippet
-   work in Codex/Cursor/Copilot, where the placeholder is never substituted and the launcher comes
-   from `PATH`.
+Licensed under the [Apache License, Version 2.0](LICENSE).
