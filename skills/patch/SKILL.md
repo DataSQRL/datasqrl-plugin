@@ -73,6 +73,8 @@ The run is still going. Start the same `--wait` command again in the background 
 
 Do this when the background `--wait` ends with the line `No run in progress. Last result: …`, or when the user asks you how the run went (the [`progress` skill](../progress/SKILL.md) tells you whether it has finished) and it shows that the run finished.
 
-Read `.code_agent_results.json` and report success, mode, refinements, and issue score/count. If the file is absent, say so.
+Read the newest run, the first entry of `runs` in `.datasqrl_agent_results.json`, and report success, mode and refinements. If the file is absent, say so.
+`success: true` means the patch passed its tests. `success: false` means the tests still failed after the fix round, or the agent could not run.
+A patch run has no judges, so its `issue_score` is `null` and it has no issues to report.
 That report is the complete deliverable, for every outcome. Stop after the report.
 The containerized agent has already run its own implement → test → fix loop, so the result it returns is final and every change it made is already applied.

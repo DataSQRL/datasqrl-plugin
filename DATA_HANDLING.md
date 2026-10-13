@@ -28,7 +28,7 @@ The project directory is the only place a run can write. A run writes these file
 - `adr/requirements_<ts>.md` and `adr/plan_<ts>.md`, the requirements and the plan.
 - `AGENTS.md` and `.claude/`, the agent's instructions, its progress trail and its structured run log (`.claude/codeagent_logs.jsonl.bak`).
 - `build/`, the compiler output.
-- `.code_agent_results.json`, the run history.
+- `.datasqrl_agent_results.json`, the run history.
 - The DataSQRL project files the agent creates or edits.
 
 ## Environment variables

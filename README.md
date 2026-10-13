@@ -50,7 +50,7 @@ command open. Runs are therefore started **detached** and the launch returns in 
 The run belongs to the Docker daemon, not to your session, which means:
 
 - **Close the session, interrupt your agent, reboot your editor** — the run finishes anyway and
-  still writes `.code_agent_results.json`.
+  still writes `.datasqrl_agent_results.json`.
 - **You follow it from another terminal.** The launch prints the command, `tail -f` on the run's progress log, that shows what the agent is doing as it happens. Ask your agent whether it is still going, what the output means, or to stop it (`progress`).
 - **Your agent learns when it ends.** Right after the launch, the agent starts `datasqrl-agent.sh --wait` in the background. That command waits for the run and prints the result when the run ends, so the agent reports back on its own. You can still ask at any time (`progress`).
 - **`progress` works from anywhere** — a different session, hours later, on a run you did not start.
