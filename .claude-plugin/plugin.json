@@ -1,7 +1,7 @@
 {
   "name": "datasqrl",
   "displayName": "DataSQRL",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
   "author": {
     "name": "DataSQRL",
