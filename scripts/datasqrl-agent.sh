@@ -662,7 +662,7 @@ RUN_NAME="datasqrl-agent-${PROJECT_SLUG}-$(_short_hash "$PROJECT_ABS")"
 # PROGRESS_PATH is the human-readable trail the container renders from its log: one record per
 # line, `+HH:MM:SS  KIND   text`, continuation lines indented. Truncated when a run starts and left
 # in place afterwards, so the last run's trail can be revisited until the next run overwrites it.
-PROGRESS_PATH="$PROJECT_ABS/.claude/datasqrl-agent-progress.txt"
+PROGRESS_PATH="$PROJECT_ABS/.datasqrl/datasqrl-agent-progress.txt"
 RESULTS_PATH="$PROJECT_ABS/.datasqrl_agent_results.json"
 
 # --- Shared helpers ----------------------------------------------------------------------------

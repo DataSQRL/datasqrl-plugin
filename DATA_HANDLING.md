@@ -26,7 +26,8 @@ Your coding agent (Claude Code, Codex, Cursor or Copilot) has its own data polic
 The project directory is the only place a run can write. A run writes these files there:
 
 - `adr/requirements_<ts>.md` and `adr/plan_<ts>.md`, the requirements and the plan.
-- `AGENTS.md` and `.claude/`, the agent's instructions, its progress trail and its structured run log (`.claude/codeagent_logs.jsonl.bak`).
+- `AGENTS.md`, the agent's instructions.
+- `.datasqrl/`, the agent's run files: its progress trail, its structured run log (`.datasqrl/datasqrl-agent-logs.jsonl.bak`), its context block and its survey of the repository.
 - `build/`, the compiler output.
 - `.datasqrl_agent_results.json`, the run history.
 - The DataSQRL project files the agent creates or edits.
