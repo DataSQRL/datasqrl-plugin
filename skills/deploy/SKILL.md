@@ -60,13 +60,12 @@ the working tree.
 Clean tree → deploy it, and say nothing about git.
 
 Dirty tree → find out whether the dirt is work the deployment would carry. Only the files the
-DataSQRL compiler treats as project material matter; `adr/` and `.claude/` are the agent's own
-bookkeeping and are dirty after every run, so counting them would raise a question on every
+DataSQRL compiler treats as project material matter; `adr/`, and `.datasqrl/` are the agent's own bookkeeping and are dirty after every run, so counting them would raise a question on every
 deploy:
 
 ```bash
 git status --porcelain \
-  | grep -vE '^.. (adr/|\.claude/|snapshots/|build/)' \
+  | grep -vE '^.. (adr/|\.datasqrl/|\.claude/|snapshots/|build/)' \
   | grep -E '\.(sqrl|graphqls?|csv|tsv|json|jsonl|ndjson|parquet|orc|avro)$|run-tests\.sh$'
 ```
 
