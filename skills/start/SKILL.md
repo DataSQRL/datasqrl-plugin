@@ -36,10 +36,7 @@ There are two lanes, and this section takes them in order:
 
 ## File ownership
 
-The containerized agent writes every file of the DataSQRL project: `.sqrl` scripts,
-`*-package.json` configs, GraphQL schemas and operations, connector configs, test files and
-snapshots. This holds for a new project in an empty directory — the agent creates the directory
-layout itself.
+The containerized agent writes every file of the DataSQRL project: `.sqrl` scripts, `*-package.json` configs, GraphQL schemas and operations, connector configs, test files and snapshots and a web UI (SPA, admin panel, dashboard, charts) over the project's GraphQL API. Agent will construct the directories and create layout itself for a green-field project while it complies with the existing tree if there is a project.
 
 In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements` skill. In Lane A the container persists the request string itself. The `resolve-issue` skill writes that file from the issue in either lane.
 
