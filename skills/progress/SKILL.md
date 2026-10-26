@@ -33,7 +33,7 @@ The trail has one line per event, `+HH:MM:SS  KIND   text`, where the stamp is t
 - `INFO` and `JUDGE`: other orchestrator messages, for example per-package judge results.
 - `WARN`: a recoverable problem, for example `tests failed, retrying`.
 - `ERROR`: a failure; `Run stopped (SIGTERM)` means someone stopped the run.
-- `DONE`: the end: `Finished · success|failed · mode · scenario · N refinement(s) · K issue(s) (C critical, H high, M medium, L low) · score S`. `success` means the final pass passed its tests. The issues are review notes from the judges, not a run fail. Each issue is in the `issues` list of `.datasqrl_agent_results.json`.
+- `DONE`: the end: `Finished · success|failed · mode · scenario · N refinement(s) · K issue(s) (C critical, H high, M medium, L low) · score S`. `success` means the final pass passed its tests. The issues are review notes from the judges, not a run fail. Each issue is in the `issues` list of `.datasqrl_agent_results.json`. When every judge failed, the line ends with `unverified` and has no score. No judge reviewed the code. The issues then come from the code-based deterministic checks only. `partially verified` after the score means that some judges failed.
 
 ## What an iteration is
 
