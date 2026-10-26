@@ -3,8 +3,8 @@
 Build [DataSQRL](https://datasqrl.com) data pipelines from your coding agent, using the Dockerized
 **DataSQRL Code Agent**.
 
-Installs as a plugin in **Claude Code**, **Codex** and **Cursor**; copies in as skills for
-**GitHub Copilot**.
+Installs as a plugin in **Claude Code**, **Codex**, **Cursor** and the **GitHub Copilot CLI**.
+For other GitHub Copilot clients, an installer copies the skills into your repository.
 
 ## What it does
 
@@ -127,8 +127,25 @@ codex plugin marketplace add DataSQRL/datasqrl-plugin
 
 ### GitHub Copilot
 
-Copilot has no plugin system — it reads skills from directories inside the repository you are
-working in. Clone this repo and run the installer against your project:
+#### Copilot CLI
+
+Install the plugin from this repository:
+
+```bash
+copilot plugin install DataSQRL/datasqrl-plugin
+```
+
+You can also add the DataSQRL marketplace first, then install the plugin from it:
+
+```bash
+copilot plugin marketplace add DataSQRL/datasqrl-plugin
+copilot plugin install datasqrl@datasqrl
+```
+
+#### Other Copilot clients
+
+These clients read skills from directories inside the repository you work in. Clone this repo and
+run the installer against your project:
 
 ```bash
 git clone https://github.com/DataSQRL/datasqrl-plugin
@@ -153,9 +170,10 @@ Claude Code third-party marketplaces don't auto-update by default:
 /reload-plugins
 ```
 
-No re-add or reinstall needed. Copilot users pull this repository, re-run `install-skills.sh`,
-and download the launcher again. [Releases](https://github.com/DataSQRL/datasqrl-plugin/releases)
-lists what changed in each version.
+No re-add or reinstall needed. Copilot CLI users run `copilot plugin update datasqrl`. Other
+Copilot users pull this repository, re-run `install-skills.sh`, and download the launcher again.
+[Releases](https://github.com/DataSQRL/datasqrl-plugin/releases) lists what changed in each
+version.
 
 ## Data handling and telemetry
 

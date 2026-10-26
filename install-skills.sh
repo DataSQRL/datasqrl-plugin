@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Install the DataSQRL skills into a repository for coding agents that have no plugin system.
 #
-# Claude Code, Codex and Cursor all install this directory as a PLUGIN and do not need this
-# script — see the README. GitHub Copilot has no plugin/marketplace concept: it discovers skills
-# from directories inside the repository you are working in, so the files have to be copied there.
+# Claude Code, Codex, Cursor and the GitHub Copilot CLI all install this directory as a PLUGIN and
+# do not need this script — see the README. Other Copilot clients discover skills from directories
+# inside the repository you are working in, so the files have to be copied there.
 #
 # Usage, from anywhere:
 #   ./install-skills.sh [target-repo]        # defaults to the current directory
