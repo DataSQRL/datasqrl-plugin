@@ -700,17 +700,22 @@ fmt_elapsed() {
 # before failing on the bogus `%m` operand; GNU `stat -c` fails cleanly (no stdout) on BSD.
 file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 
-# Read one field out of the pretty-printed results file. The newest run is first, so the first
-# match belongs to it.
+# Read one field of the newest run out of the pretty-printed results file. The newest run is
+# first, and the line that is exactly `    }` closes it. Reading stops there, so a field that the
+# newest run lacks is never taken from an older run.
 result_field() {
     [ -f "$RESULTS_PATH" ] || return 0
-    grep -m1 "\"$1\"" "$RESULTS_PATH" 2>/dev/null \
-        | sed 's/.*: *//; s/[",]//g; s/^ *//; s/ *$//'
+    awk -v key="\"$1\"" '
+        /^    }/ { exit }
+        index($0, key) { sub(/.*: */, ""); gsub(/[",]/, ""); gsub(/^ +| +$/, ""); print; exit }
+    ' "$RESULTS_PATH" 2>/dev/null
 }
 
+# A run whose judges all failed has no score but still has issues, from the code-based checks.
 result_issues() {
     _score="$(result_field issue_score)"
-    case "$_score" in ''|null) return 0 ;; esac
+    _verification="$(result_field verification_status)"
+    case "$_score" in ''|null) [ "$_verification" = failed ] || return 0 ;; esac
     awk '
         /"issue_count": \{/ { inside = 1; next }
         inside && /}/ { exit }
@@ -722,7 +727,11 @@ result_issues() {
         }
         END { printf "%s issue(s) (%s)", total, counts }
     ' "$RESULTS_PATH"
-    printf ' · score %s' "$_score"
+    case "$_verification" in
+        failed) printf ' · unverified' ;;
+        partial) printf ' · score %s · partially verified' "$_score" ;;
+        *) printf ' · score %s' "$_score" ;;
+    esac
 }
 
 result_summary() {
