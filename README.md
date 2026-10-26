@@ -112,8 +112,7 @@ codex plugin marketplace add DataSQRL/datasqrl-plugin
 
 ### Cursor
 
-1. Add the DataSQRL marketplace from your terminal. This registers the marketplace but does not
-   install the plugin:
+1. Add the DataSQRL marketplace from your terminal. This registers the marketplace but does not install the plugin:
 
    ```bash
    cursor-agent plugin marketplace add https://github.com/DataSQRL/datasqrl-plugin
@@ -124,8 +123,7 @@ codex plugin marketplace add DataSQRL/datasqrl-plugin
 4. Choose the installation scope:
    - **User** makes the plugin available in all your Cursor projects.
    - **Project** installs the plugin only for the current project.
-5. To verify the installation, open **Customize** in the Cursor IDE sidebar. Make sure that the
-   DataSQRL plugin is in the list of installed plugins.
+5. To verify the installation, open **Customize** in the Cursor IDE sidebar. Make sure that the DataSQRL plugin is in the list of installed plugins.
 
 ### GitHub Copilot
 
