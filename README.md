@@ -118,7 +118,7 @@ codex plugin marketplace add DataSQRL/datasqrl-plugin
    cursor-agent plugin marketplace add https://github.com/DataSQRL/datasqrl-plugin
    ```
 
-2. Start the Cursor CLI with `cursor-agent`, then enter `/plugin` in the session.
+2. Start the Cursor CLI with `cursor-agent`, then enter `/plugins` in the session.
 3. Open the **Marketplace** tab and select the DataSQRL plugin. Press Enter to install it.
 4. Choose the installation scope:
    - **User** makes the plugin available in all your Cursor projects.
