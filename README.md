@@ -3,8 +3,8 @@
 Build [DataSQRL](https://datasqrl.com) data pipelines from your coding agent, using the Dockerized
 **DataSQRL Code Agent**.
 
-Installs as a plugin in **Claude Code**, **Codex** and **Cursor**; copies in as skills for
-**GitHub Copilot**.
+Installs as a plugin in **Claude Code**, **Codex**, **Cursor** and the **GitHub Copilot CLI**.
+For other GitHub Copilot clients, an installer copies the skills into your repository.
 
 ## What it does
 
@@ -112,12 +112,40 @@ codex plugin marketplace add DataSQRL/datasqrl-plugin
 
 ### Cursor
 
-Point Cursor at `DataSQRL/datasqrl-plugin`; the manifest is at the repository root.
+1. Add the DataSQRL marketplace from your terminal. This registers the marketplace but does not install the plugin:
+
+   ```bash
+   cursor-agent plugin marketplace add https://github.com/DataSQRL/datasqrl-plugin
+   ```
+
+2. Start the Cursor CLI with `cursor-agent`, then enter `/plugin` in the session.
+3. Open the **Marketplace** tab and select the DataSQRL plugin. Press Enter to install it.
+4. Choose the installation scope:
+   - **User** makes the plugin available in all your Cursor projects.
+   - **Project** installs the plugin only for the current project.
+5. To verify the installation, open **Customize** in the Cursor IDE sidebar. Make sure that the DataSQRL plugin is in the list of installed plugins.
 
 ### GitHub Copilot
 
-Copilot has no plugin system — it reads skills from directories inside the repository you are
-working in. Clone this repo and run the installer against your project:
+#### Copilot CLI
+
+Install the plugin from this repository:
+
+```bash
+copilot plugin install DataSQRL/datasqrl-plugin
+```
+
+You can also add the DataSQRL marketplace first, then install the plugin from it:
+
+```bash
+copilot plugin marketplace add DataSQRL/datasqrl-plugin
+copilot plugin install datasqrl@datasqrl
+```
+
+#### Other Copilot clients
+
+These clients read skills from directories inside the repository you work in. Clone this repo and
+run the installer against your project:
 
 ```bash
 git clone https://github.com/DataSQRL/datasqrl-plugin
@@ -142,9 +170,10 @@ Claude Code third-party marketplaces don't auto-update by default:
 /reload-plugins
 ```
 
-No re-add or reinstall needed. Copilot users pull this repository, re-run `install-skills.sh`,
-and download the launcher again. [Releases](https://github.com/DataSQRL/datasqrl-plugin/releases)
-lists what changed in each version.
+No re-add or reinstall needed. Copilot CLI users run `copilot plugin update datasqrl`. Other
+Copilot users pull this repository, re-run `install-skills.sh`, and download the launcher again.
+[Releases](https://github.com/DataSQRL/datasqrl-plugin/releases) lists what changed in each
+version.
 
 ## Data handling and telemetry
 
