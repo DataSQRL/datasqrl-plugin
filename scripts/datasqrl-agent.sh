@@ -711,11 +711,20 @@ result_field() {
     ' "$RESULTS_PATH" 2>/dev/null
 }
 
-# A run whose judges all failed has no score but still has issues, from the code-based checks.
+# The note after the score, as the agent prints it: when the code checks or the LLM judges are
+# partial or failed, name each of the two that ran, with its status. A run from an older image has
+# neither field and gets no note.
+status_note() {
+    case "$1 $2" in *partial*|*failed*) ;; *) return 0 ;; esac
+    _planes=""
+    case "$1" in ''|null) ;; *) _planes="code checks: $1" ;; esac
+    case "$2" in ''|null) ;; *) _planes="${_planes:+$_planes, }LLM judges: $2" ;; esac
+    printf '[%s]' "$_planes"
+}
+
 result_issues() {
     _score="$(result_field issue_score)"
-    _verification="$(result_field verification_status)"
-    case "$_score" in ''|null) [ "$_verification" = failed ] || return 0 ;; esac
+    case "$_score" in ''|null) return 0 ;; esac
     awk '
         /"issue_count": \{/ { inside = 1; next }
         inside && /}/ { exit }
@@ -727,11 +736,10 @@ result_issues() {
         }
         END { printf "%s issue(s) (%s)", total, counts }
     ' "$RESULTS_PATH"
-    case "$_verification" in
-        failed) printf ' · unverified' ;;
-        partial) printf ' · score %s · partially verified' "$_score" ;;
-        *) printf ' · score %s' "$_score" ;;
-    esac
+    printf ' · score %s' "$_score"
+    _note="$(status_note "$(result_field code_check_status)" "$(result_field llm_judge_status)")"
+    [ -n "$_note" ] && printf ' %s' "$_note"
+    return 0
 }
 
 result_summary() {

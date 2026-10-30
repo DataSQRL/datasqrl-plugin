@@ -55,8 +55,8 @@ The run is still going. Start the same `--wait` command again in the background 
 
 Do this when the background `--wait` ends with the line `No run in progress. Last result: …`, or when the user asks you how the run went (the [`progress` skill](../progress/SKILL.md) tells you whether it has finished) and it shows that the run finished.
 
-Read the newest run, the first entry of `runs` in `.datasqrl_agent_results.json`, and report success, mode, refinements, `issue_score`, `verification_status` and the counts for each severity in `issue_count`. If the file is absent, say so.
+Read the newest run, the first entry of `runs` in `.datasqrl_agent_results.json`, and report success, mode, refinements, `issue_score`, `code_check_status`, `llm_judge_status` and the counts for each severity in `issue_count`. If the file is absent, say so.
 `success` means the final iteration passed its tests. The judges' issues, each one listed in `issues`, are review notes only.
-`verification_status` says whether the judges reviewed the code. The values are `complete`, `partial` (some judges failed) and `failed` (every judge failed). A `failed` run is unverified, and its `issue_score` is `null`. Tell the user when the value is `partial` or `failed`. A run from an older image has no such field.
+`code_check_status` says whether the code-based checks ran, and `llm_judge_status` says whether the LLM judges ran. The values are `complete` (none failed), `partial` (some failed), `failed` (all failed) and `null` (none ran). A check that finds issues has not failed. `issue_score` holds the score of the issues found, also when the LLM judges failed. Tell the user when either value is `partial` or `failed`. A run from an older image has neither field.
 That report is the complete deliverable, for every outcome. Stop after the report.
 The containerized agent has already run its own compile → test → judge → refine loop, so the result it returns is final and every change it made is already applied.

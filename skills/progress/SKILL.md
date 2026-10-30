@@ -25,7 +25,7 @@ If the user pasted lines from their terminal, explain those lines and use the co
 The trail has one line per event, `+HH:MM:SS  KIND   text`, where the stamp is the time elapsed since the run started. An indented line continues the previous one. The file is written during the run and stays afterwards until the next run overwrites it, so the last run's trail can always be revisited.
 
 - `RUN`: the run started, with its mode (planning, implementation, patch, question).
-- `STEP`: a milestone of the orchestrator: `Iteration N · implementing`, `· running tests`, `· verifying`, `· verified (K issue(s), score S)`, `Finalizing`.
+- `STEP`: a milestone of the orchestrator: `Iteration N · implementing`, `· running tests`, `· verifying`, `· verified (K issue(s), score S)`, `Finalizing`. `not verified` in place of `verified` means that every check failed to run, so nothing reviewed the code.
 - `TEXT`: a sentence the coding agent wrote while working, in full.
 - `TOOL`: a tool call, the tool name and its main argument, for example `Bash /opt/agent/cmd.sh test my-package.json` (one compile-and-test run) or `Write /workspace/connectors/sources.sqrl`.
 - `TASK`: a subagent the coding agent started, with its description; `↻` marks a progress update of that subagent.
@@ -33,7 +33,7 @@ The trail has one line per event, `+HH:MM:SS  KIND   text`, where the stamp is t
 - `INFO` and `JUDGE`: other orchestrator messages, for example per-package judge results.
 - `WARN`: a recoverable problem, for example `tests failed, retrying`.
 - `ERROR`: a failure; `Run stopped (SIGTERM)` means someone stopped the run.
-- `DONE`: the end: `Finished · success|failed · mode · scenario · N refinement(s) · K issue(s) (C critical, H high, M medium, L low) · score S`. `success` means the final pass passed its tests. The issues are review notes from the judges, not a run fail. Each issue is in the `issues` list of `.datasqrl_agent_results.json`. When every judge failed, the line ends with `unverified` and has no score. No judge reviewed the code. The issues then come from the code-based deterministic checks only. `partially verified` after the score means that some judges failed.
+- `DONE`: the end: `Finished · success|failed · mode · scenario · N refinement(s) · K issue(s) (C critical, H high, M medium, L low) · score S`. `success` means the final pass passed its tests. The issues are review notes from the judges, not a run fail. Each issue is in the `issues` list of `.datasqrl_agent_results.json`. Verification has two parts: the code-based checks and the LLM judges. When either part is `partial` (some checks failed to run) or `failed` (all failed to run), the `verified` and `DONE` lines add a note after the score that names each part, for example `score 25 [code checks: complete, LLM judges: failed]`. With `LLM judges: failed`, no LLM judge reviewed the code, and the issues come from the code-based checks only.
 
 ## What an iteration is
 
