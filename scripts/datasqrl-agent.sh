@@ -700,12 +700,26 @@ fmt_elapsed() {
 # before failing on the bogus `%m` operand; GNU `stat -c` fails cleanly (no stdout) on BSD.
 file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 
-# Read one field out of the pretty-printed results file. The newest run is first, so the first
-# match belongs to it.
+# Read one field of the newest run out of the pretty-printed results file. The newest run is
+# first, and the line that is exactly `    }` closes it. Reading stops there, so a field that the
+# newest run lacks is never taken from an older run.
 result_field() {
     [ -f "$RESULTS_PATH" ] || return 0
-    grep -m1 "\"$1\"" "$RESULTS_PATH" 2>/dev/null \
-        | sed 's/.*: *//; s/[",]//g; s/^ *//; s/ *$//'
+    awk -v key="\"$1\"" '
+        /^    }/ { exit }
+        index($0, key) { sub(/.*: */, ""); gsub(/[",]/, ""); gsub(/^ +| +$/, ""); print; exit }
+    ' "$RESULTS_PATH" 2>/dev/null
+}
+
+# The note after the score, as the agent prints it: when the code checks or the LLM judges are
+# partial or failed, name each of the two that ran, with its status. A run from an older image has
+# neither field and gets no note.
+status_note() {
+    case "$1 $2" in *partial*|*failed*) ;; *) return 0 ;; esac
+    _planes=""
+    case "$1" in ''|null) ;; *) _planes="code checks: $1" ;; esac
+    case "$2" in ''|null) ;; *) _planes="${_planes:+$_planes, }LLM judges: $2" ;; esac
+    printf '[%s]' "$_planes"
 }
 
 result_issues() {
@@ -723,6 +737,9 @@ result_issues() {
         END { printf "%s issue(s) (%s)", total, counts }
     ' "$RESULTS_PATH"
     printf ' · score %s' "$_score"
+    _note="$(status_note "$(result_field code_check_status)" "$(result_field llm_judge_status)")"
+    [ -n "$_note" ] && printf ' %s' "$_note"
+    return 0
 }
 
 result_summary() {
