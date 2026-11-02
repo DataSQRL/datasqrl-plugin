@@ -598,7 +598,7 @@ cmd_deployments() {
         resolve_org
         request GET "$API/deployments?orgId=$ORG_ID&limit=${ARG_LIMIT:-10}"
         require_ok
-        HTTP_BODY=$(printf '%s' "$HTTP_BODY" | jq '.deployments // .')
+        HTTP_BODY=$(printf '%s' "$HTTP_BODY" | jq '.deployments? // .')
     fi
 
     if [ "$ARG_JSON" = 1 ]; then
