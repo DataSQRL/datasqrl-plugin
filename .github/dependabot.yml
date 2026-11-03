@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Keeps the actions pinned to commit SHAs in .github/workflows current.
+  - package-ecosystem: "github-actions"
+    # Supply-chain policy: only take releases that have been public for 14 days.
+    cooldown:
+      default-days: 14
+    directory: "/"
+    schedule:
+      interval: "weekly"
