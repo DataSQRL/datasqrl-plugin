@@ -1,11 +1,17 @@
-"""Drives scripts/datasqrl-agent.sh --show-options with the fake `docker` from the image tests."""
+"""Drives scripts/datasqrl-agent.sh --show-options with the fake `docker` from fakes/docker_images.py."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
-from tests.test_datasqrl_agent_image import LAUNCHER, have_local, image_id, project  # noqa: F401
+from tests.launcher.fakes.docker_images import (  # noqa: F401
+    LAUNCHER,
+    project,
+    image_id,
+    have_local,
+)
+
 
 OS_LOCAL = "adv-agent:latest"
 

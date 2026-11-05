@@ -13,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_datasqrl_agent_image import LAUNCHER, SHIM, have_local, image_id, project  # noqa: F401
+from tests.launcher.fakes.docker_images import (  # noqa: F401
+    LAUNCHER,
+    SHIM,
+    project,
+    image_id,
+    have_local,
+)
+
 
 OS_LOCAL = "adv-agent:latest"
 
