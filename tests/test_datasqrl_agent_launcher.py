@@ -19,12 +19,17 @@ from tests.run_results import calculate_issue_score, count_by_severity, issue, w
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "scripts" / "datasqrl-agent.sh"
 
+CHECKED_IMAGE_ID = "sha256:checked-image"
+
 SHIM = """#!/bin/sh
 case "$1" in
   ps)      [ -f "$FAKE_DOCKER_DIR/live" ] && echo deadbeef; exit 0 ;;
   inspect) case "$*" in
              *codeagent.started*) cat "$FAKE_DOCKER_DIR/started" 2>/dev/null ;;
              *codeagent.mode*)    echo implementation ;;
+           esac; exit 0 ;;
+  image)   case "$*" in
+             *.Id*) echo "$CHECKED_IMAGE_ID" ;;
            esac; exit 0 ;;
   stop)    printf '%s\\n' "$*" > "$FAKE_DOCKER_DIR/stop_args"; rm -f "$FAKE_DOCKER_DIR/live"; exit 0 ;;
   wait)    printf '%s\\n' "$*" > "$FAKE_DOCKER_DIR/wait_args"
@@ -53,11 +58,18 @@ def project(tmp_path: Path):
     (proj / ".datasqrl").mkdir(parents=True)
     # The developer's own AWS settings must not reach the launcher under test.
     host = {k: v for k, v in os.environ.items() if not k.startswith("AWS_") and k != "DATASQRL_TELEMETRY"}
+    # Every image the shim reports is one whose signature this machine already verified, so the
+    # launcher runs it with no pull. These tests are about the run, not the image check.
+    state = tmp_path / "state"
+    (state / "datasqrl-agent").mkdir(parents=True)
+    (state / "datasqrl-agent" / "verified-images").write_text(f"{CHECKED_IMAGE_ID}\n")
     env = {
         **host,
         "PATH": f"{shim_dir}:{os.environ['PATH']}",
         "FAKE_DOCKER_DIR": str(fake),
         "DATASQRL_AGENT_ALLOW_NO_GIT": "1",
+        "XDG_STATE_HOME": str(state),
+        "CHECKED_IMAGE_ID": CHECKED_IMAGE_ID,
     }
     return proj, fake, env
 

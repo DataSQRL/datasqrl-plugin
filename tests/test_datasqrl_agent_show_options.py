@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tests.test_datasqrl_agent_image import LAUNCHER, have_local, project  # noqa: F401
+from tests.test_datasqrl_agent_image import LAUNCHER, have_local, image_id, project  # noqa: F401
 
 OS_LOCAL = "adv-agent:latest"
 
@@ -23,9 +23,10 @@ def run_args(fake: Path) -> list[str]:
 
 
 def image_args(fake: Path, image: str = OS_LOCAL) -> list[str]:
-    """What the image was asked: everything after its name."""
+    """What the image was asked: everything after its name, or after its ID for a checked image."""
     args = run_args(fake)
-    return args[args.index(image) + 1:]
+    position = args.index(image) if image in args else args.index(image_id(image))
+    return args[position + 1:]
 
 
 def test_asks_the_image_with_no_repository(project, tmp_path):  # noqa: F811

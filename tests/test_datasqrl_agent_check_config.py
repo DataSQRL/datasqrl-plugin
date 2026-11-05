@@ -13,15 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_datasqrl_agent_image import LAUNCHER, SHIM, have_local, project  # noqa: F401
+from tests.test_datasqrl_agent_image import LAUNCHER, SHIM, have_local, image_id, project  # noqa: F401
 
 OS_LOCAL = "adv-agent:latest"
 
+_PLAIN_RUN = """    printf '%s\\n' "$@" > "$D/run_args"; exit 0 ;;"""
+assert _PLAIN_RUN in SHIM, "the image tests' docker shim changed; update RUN_SHIM"
 RUN_SHIM = SHIM.replace(
-    """  run)
-    printf '%s\\n' "$@" > "$D/run_args"; exit 0 ;;""",
-    """  run)
-    printf '%s\\n' "$@" > "$D/run_args"; printf '%s\\n' "$FAKE_RUN_OUT"; exit "${FAKE_RUN_RC:-0}" ;;""",
+    _PLAIN_RUN,
+    """    printf '%s\\n' "$@" > "$D/run_args"; printf '%s\\n' "$FAKE_RUN_OUT"; exit "${FAKE_RUN_RC:-0}" ;;""",
 )
 
 AWS_SHIM = r"""#!/bin/sh
@@ -171,7 +171,8 @@ def test_the_choices_reach_the_image(setup):
     check(proj, env, "--harness", "pi", "--provider", "fireworks", "--model", "m")
 
     args = (fake / "run_args").read_text().splitlines()
-    assert args[args.index(OS_LOCAL) + 1:] == ["--check-config", "--harness", "pi", "--provider", "fireworks", "--model", "m"]
+    # The launcher runs the checked image by its ID.
+    assert args[args.index(image_id(OS_LOCAL)) + 1:] == ["--check-config", "--harness", "pi", "--provider", "fireworks", "--model", "m"]
 
 
 def test_other_arguments_are_refused(setup):
