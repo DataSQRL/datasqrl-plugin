@@ -1,0 +1,3 @@
+# Written when the tests in tests/ run.
+__pycache__/
+.pytest_cache/

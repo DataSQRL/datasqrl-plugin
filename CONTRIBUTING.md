@@ -25,7 +25,10 @@ Before you open a pull request, run the checks CI runs:
 
 ```bash
 .github/check-plugin.sh
+python3 -m pytest tests    # needs pytest; the tests use a fake docker, not Docker itself
 ```
+
+The tests in `tests/` drive `scripts/datasqrl-agent.sh`. A change to the launcher comes with its tests in the same pull request. `tests/run_results.py` writes the results file in the agent's format, and a contract test in DataSQRL/code-agent keeps the two in step.
 
 ## Rules to keep in mind
 

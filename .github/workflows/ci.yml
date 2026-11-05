@@ -18,3 +18,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # ubuntu-latest ships shellcheck, so the lint step always runs here.
       - run: .github/check-plugin.sh
+      # The launcher tests run scripts/datasqrl-agent.sh against a fake `docker`, so they need no
+      # Docker and no network. Ubuntu's system Python refuses a plain pip install, hence the venv.
+      - name: Launcher tests
+        run: |
+          python3 -m venv /tmp/test-venv
+          /tmp/test-venv/bin/pip install --quiet pytest==9.1.1
+          /tmp/test-venv/bin/python -m pytest tests -q
