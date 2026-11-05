@@ -23,9 +23,13 @@ What each edition needs before its first pull:
 |---|---|---|
 | open-source | nothing | `DATASQRL_AGENT_EDITION=os bash "$CODEAGENT" --pull-image` |
 | pro, with the token DataSQRL gave the user | the user sets `DATASQRL_PRO_TOKEN` in their shell profile and restarts their coding agent | `bash "$CODEAGENT" --pull-image` |
-| pro, with the user's own GitHub account that DataSQRL gave access to | the user logs Docker in to `ghcr.io` once, in their terminal: `echo "$GITHUB_PAT" \| docker login ghcr.io -u <github-username> --password-stdin`, with a personal access token (classic) that has the `read:packages` scope | `DATASQRL_AGENT_EDITION=pro bash "$CODEAGENT" --pull-image` |
+| pro, with the user's own GitHub account that DataSQRL gave access to | the user makes a classic `read:packages` token on that account, sets it as `DATASQRL_PRO_TOKEN` in their shell profile, and restarts their coding agent | `bash "$CODEAGENT" --pull-image` |
 
-Docker keeps that login, so the GitHub account route needs it once per machine. Once the pro image is on the machine, rule 3 selects it on every later command, with no variable set.
+The launcher checks every pull. It verifies that DataSQRL's release workflow signed the image. It deletes an image that fails the check, and it runs only an image it checked on this machine.
+
+The pro signature is private like the pro image. So every pro pull needs `DATASQRL_PRO_TOKEN`, not only the first one. Once a checked pro image is on the machine, rule 3 selects it on every later command. A run that pulls nothing needs no token.
+
+An image that the launcher did not check makes the next run pull and check a signed image. An image from an older unsigned launcher is an example. A local build runs only with `DATASQRL_AGENT_IMAGE` set to its name. The launcher then prints a warning that it skips the check. The check needs network access to Sigstore (`sigstore.dev`) and to `ghcr.io`.
 
 ## Where settings live
 
