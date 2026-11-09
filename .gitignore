@@ -1,3 +1,7 @@
 # Written when the tests in tests/ run.
 __pycache__/
 .pytest_cache/
+
+# IDE files.
+*.iml
+.idea/
