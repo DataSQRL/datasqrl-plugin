@@ -2,6 +2,8 @@
 
 Copy this structure into `adr/requirements_<YYYYMMDD-HHMMSS>.md`. Every section is answered one of three ways: a stated value, an entry in `## Open Questions` with a recommended default, or an explicit note that it does not apply to this pipeline.
 
+State what must be computed and why, not how. A how (technology, model, algorithm) belongs here only as a hard constraint, listed under `## Hard constraints`.
+
 **Vague and specific request examples:**
 
 > vague: *ingest transcription events and aggregate them*
@@ -42,6 +44,7 @@ One subsection per source.
 
 ### `<source name>`
 
+- **Ownership**: an external system the project reads from, or data the project captures and manages itself (API mutation, project-managed Kafka topic, project-managed Iceberg table).
 - **Transport**: Kafka topic (name it), webhook/REST endpoint (give the path and method), database table, file drop, object store path.
 - **Format**: JSON / Avro / Parquet / CSV. Schema registry, if any.
 - **Sample payload**: a real record, redacted. Mark optional and nullable fields.
@@ -66,14 +69,22 @@ The nouns of the domain, their primary keys, and how they relate. If a source ta
 
 What must be computed. For each: the input, the grouping, the window (tumbling/sliding/session + size, or unbounded), and the aggregation. State how late-arriving data should affect a result that was already emitted.
 
+## Results
+
+What the pipeline produces, one entry per result.
+
+- **Kind**: data lake table / data product, API, or stream (Kafka topic).
+- **Consumers**: who or what reads it.
+- **Authorization**: public, or authorized. When authorized: the exact claims (API, for example JWT `tenant_id`, `role`) or tags (data lake / data product) that grant access, and what each one filters or permits.
+
 ## API surface
 
-What consumers need, concretely.
+What consumers need, concretely. Delete this section when no result is an API.
 
 - **Queries**: the actual questions asked, with their parameters and expected shape.
 - **Mutations**: write endpoints, and what they accept.
 - **Subscriptions**: what should push, and on what trigger.
-- **Access**: public, authenticated, per-tenant? Which field carries the tenant.
+- **Access**: which claim scopes each query, mutation and subscription (see Results).
 
 ## Test data and acceptance criteria
 
@@ -86,12 +97,19 @@ If possible every FR need at least one criterion.
 
 How well it must do it, with numbers rather than adjectives. List what constrains the design.
 
-- **Freshness / latency**: end-to-end target, and measured from what to what.
-- **Throughput**: sustained and peak, and what happens above peak.
+- **Freshness**: the acceptable staleness of results, from a record arriving at the source to it showing in the result (seconds, minutes, hours, daily). This drives the architecture. If it is "realtime", say why minutes would not do.
+- **API latency SLA**: per-query latency target (for example p99 < 200 ms) and request rate, average and peak.
+- **Workload**: data volume and event rates, sustained and peak, expected growth, and what happens above peak.
+- **Budget**: what running the pipeline may cost (per month), or the infrastructure it must fit.
+- **Reliability**: availability target, tolerated data loss, recovery time after a failure.
 - **Retention**: how long data is kept, and what happens at the boundary.
 - **PII and sensitive fields**: which fields, and what is required of them (masking, exclusion from the API, restricted access).
 - **Compliance**: regimes that constrain storage, residency or deletion.
 - **Availability**: expectations during deploys and failures.
+
+## Hard constraints
+
+The hows that are not negotiable, each with its reason, for example: *must use the OpenAI luna model for classification (contractual)*. Write "none" when there are none.
 
 ## Open Questions
 
