@@ -25,7 +25,8 @@
 #              background right after --detach and let your harness notify you when it exits.
 #   --pull-image    Pull the selected edition's image, or update it when a newer build exists.
 #                   Starts no run.
-#   --image-exists  Print whether the selected edition's image is local; exit 0 or 1. Never pulls.
+#   --image-exists  Print whether the selected edition's image is local and checked; exit 0 or 1.
+#                   Never pulls.
 #   --show-options [ID]  Print the harnesses, providers and default models the selected image offers,
 #                   which variables each provider needs, and whether each is set (never a value).
 #                   With ID or --provider ID, that provider alone. Takes --harness for another
@@ -374,8 +375,9 @@ do_pull_image() {
     ensure_image
 }
 
-# --image-exists: one line on stdout, exit 0 when the selected image is local and 1 when it is not.
-# It never pulls, so a caller can decide what to do next.
+# --image-exists: one line on stdout, exit 0 when the selected image is local and checked, 1 when
+# it is missing or has no checked signature. A DATASQRL_AGENT_IMAGE image is never checked, so it
+# only has to be local. It never pulls, so a caller can decide what to do next.
 do_image_exists() {
     if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
         _img="$DATASQRL_AGENT_IMAGE"; _what="$DATASQRL_AGENT_IMAGE"
@@ -384,6 +386,11 @@ do_image_exists() {
         _img="$LOCAL_IMAGE"; _what="$LOCAL_IMAGE ($RUN_EDITION edition)"
     fi
     if docker image inspect "$_img" >/dev/null 2>&1; then
+        if [ -z "${DATASQRL_AGENT_IMAGE:-}" ] \
+           && ! is_verified_image "$(docker image inspect -f '{{.Id}}' "$_img" 2>/dev/null)"; then
+            printf '%s has no checked signature · run: datasqrl-agent.sh --pull-image\n' "$_what"
+            return 1
+        fi
         printf '%s is present · %s\n' "$_img" "$(image_summary "$_img")"
         return 0
     fi

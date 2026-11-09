@@ -89,6 +89,22 @@ class TestImageExists:
         assert r.returncode == 0, r.stderr
         assert r.stdout.strip() == "custom:dev is present · edition: pro · version: local build"
 
+    def test_an_unchecked_image_names_the_fix_and_exits_one(self, project):
+        proj, fake, env = project
+        have_local(fake, "adv-agent:latest", "os", checked=False)
+        r = run_flag(proj, env, "--image-exists")
+        assert r.returncode == 1
+        assert r.stdout.strip() == ("adv-agent:latest (os edition) has no checked signature"
+                                    " · run: datasqrl-agent.sh --pull-image")
+        assert pulls(fake) == []
+
+    def test_a_custom_image_needs_no_checked_signature(self, project):
+        proj, fake, env = project
+        have_local(fake, "custom:dev", "pro", "", checked=False)
+        r = run_flag(proj, env, "--image-exists", DATASQRL_AGENT_IMAGE="custom:dev")
+        assert r.returncode == 0, r.stderr
+        assert r.stdout.strip() == "custom:dev is present · edition: pro · version: local build"
+
     def test_works_outside_a_git_repository(self, project, tmp_path):
         proj, fake, env = project
         have_local(fake, "adv-agent:latest", "os")

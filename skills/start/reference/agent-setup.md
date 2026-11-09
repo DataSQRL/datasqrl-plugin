@@ -29,7 +29,7 @@ The launcher checks every pull. It verifies that DataSQRL's release workflow sig
 
 The pro signature is private like the pro image. So every pro pull needs `DATASQRL_PRO_TOKEN`, not only the first one. Once a checked pro image is on the machine, rule 3 selects it on every later command. A run that pulls nothing needs no token.
 
-An image that the launcher did not check makes the next run pull and check a signed image. An image from an older unsigned launcher is an example. A local build runs only with `DATASQRL_AGENT_IMAGE` set to its name. The launcher then prints a warning that it skips the check. The check needs network access to Sigstore (`sigstore.dev`) and to `ghcr.io`.
+An image that the launcher did not check makes the next run pull and check a signed image. `--image-exists` prints `has no checked signature` for that image, and `--pull-image` replaces it. An image from an older unsigned launcher is an example. A local build runs only with `DATASQRL_AGENT_IMAGE` set to its name. The launcher then prints a warning that it skips the check. The check needs network access to Sigstore (`sigstore.dev`) and to `ghcr.io`.
 
 ## Where settings live
 
