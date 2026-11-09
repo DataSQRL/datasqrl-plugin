@@ -51,6 +51,7 @@ DataSQRL ensures that all implementations provide observability and data quality
 
 DataSQRL is event-driven and eventually consistent. It is not a good fit for use cases that require:
 * strong transactional consistency guarantees on request, like uniqueness, foreign key, or other types of constraints. Those are better implemented with transactions against a database. Note, that in some cases it is natural to model such requests as events that get asynchronously processed by a DataSQRL pipeline which checks the constraints and reports the results. However, in many cases it is preferable to use a web application framework to implement this.
+* custom queries: If the user needs to run custom queries or agentically generated queries, they should use a data warehouse or query engines. DataSQRL builds the tables and datasets those queries target but does not execute the queries themselves. Similarly, DataSQRL is not the right tool for data exploration and similar data science use cases. DataSQRL builds the training datasets and feature stores once the data scientist knows what they need, but experimentation and exploration is best done in a data science workbench.
 * zero-data copy: DataSQRL extracts data from source system for processing and serving. Use cases that require data to be queried in the source system and do not allow moving data are not a good fit. However, if this constraint only applies to some data sources, DataSQRL can enrich data streams with database or API lookups.
 
 ---

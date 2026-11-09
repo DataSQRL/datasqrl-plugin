@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Write, Skill
 
 Turns a GitHub issue into a DataSQRL Code Agent run on the project it is about.
 
-Issues filed by the DataSQRL Cloud assistant report a defect in the user's project: actual and expected behaviour, evidence, where it surfaces and acceptance criteria. They stop at the evidence, because deciding the fix is the agent's work. Below the report, after a `---` line, the platform appends a footer naming the requester, the project and its directory in the repository.
+Issues filed by the DataSQRL Cloud assistant report a defect in the user's project: actual and expected behavior, evidence, where it surfaces and acceptance criteria. They stop at the evidence, because deciding the fix is the agent's work. Below the report, after a `---` line, the platform appends a footer naming the requester, the project and its directory in the repository.
 
 ## Step 1 — make sure the agent image is here
 
