@@ -79,7 +79,7 @@ What the pipeline produces, one entry per result.
 
 ## API surface
 
-What consumers need, concretely. Delete this section when no result is an API.
+What consumers need, concretely. Write "none" when no result is an API.
 
 - **Queries**: the actual questions asked, with their parameters and expected shape.
 - **Mutations**: write endpoints, and what they accept.
@@ -110,6 +110,8 @@ How well it must do it, with numbers rather than adjectives. List what constrain
 ## Hard constraints
 
 The hows that are not negotiable, each with its reason, for example: *must use the OpenAI luna model for classification (contractual)*. Write "none" when there are none.
+
+The API surface that the user defines is a hard constraint, although it has its own section under `## API surface`.
 
 ## Open Questions
 

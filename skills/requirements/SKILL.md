@@ -59,7 +59,7 @@ Specify each of these from what section 1 gathered. The template's Sources and T
 
 ### Architecture drivers
 
-These decide the architecture. The [`plan` skill](../plan/SKILL.md) checks for each one before planning starts.
+These decide the architecture. [Section 4](#4-check-before-you-hand-it-over) checks each one before the hand-off.
 
 1. **Sources**: where the data comes from, and which data the project must capture and manage itself, through an API mutation, a Kafka topic or an Iceberg table that the project owns. Data read from a system someone else runs is not managed by the project.
 2. **Results**: what the pipeline produces (a data lake table or data product, an API, or a stream), who consumes it, and whether access must be authorized.
@@ -87,6 +87,8 @@ State what is out of scope alongside what is in.
 
 Every item below is answered one of three ways: a stated value, an entry in `## Open Questions` with a recommended default, or an explicit note that it does not apply to this pipeline.
 
+Write each gap that the check finds as an entry in `## Open Questions`, so that the user can answer it in the file.
+
 - [ ] Every functional requirement is numbered (`FR-n`) and verifiable on its own, with no "robust",
       "graceful", "scalable"
 - [ ] Every `FR-n` has at least one acceptance criterion tagged with it
@@ -106,19 +108,19 @@ Every item below is answered one of three ways: a stated value, an entry in `## 
 Tell the user three things:
 
 1. **Where you wrote it**: the full path, including the project directory.
-2. **The open questions, listed out.** These are the decisions the planner will otherwise make on their behalf, so they are the reason to open the file.
+2. **The open questions**, one line each: what is missing, and the selected default that the planner uses when the user gives no answer. List the questions about [architecture drivers](#architecture-drivers) first. Point to `## Open Questions` for the details. Tell the user that they can answer in the file or in the chat. These are the decisions the planner will otherwise make on their behalf, so they are the reason to open the file.
 3. **Anything you had to assume** that is not already an open question.
 
-Then ask whether to go ahead, and **wait for their answer**:
+Then ask whether they want to answer the open questions or to plan as is, and **wait for their answer**:
 
 > Requirements written to `<project>/adr/requirements_<ts>.md`. Please review it, especially the
-> 3 open questions above. Once it looks right, tell me and I'll run planning on it.
+> 3 open questions above. Answer them, or tell me to plan with the selected defaults.
 
 Handle their reply:
 
 - **They approve** ("looks good", "go ahead", "plan it"): use the [`plan` skill](../plan/SKILL.md) with that file path, from the project directory. Their approval is what the `plan` skill requires.
-- **They edit the file**: re-read it before planning, so what you act on matches what is on disk.
-- **They answer the open questions in the chat**: update the file with their answers first, then confirm and plan. The file is the planner's only input, so an answer that lives only in the chat is re-assumed.
+- **They edit the file**: re-read it before planning, so what you act on matches what is on disk. Check what changed, and run the [section 4](#4-check-before-you-hand-it-over) check again. When gaps remain, list them, ask about them, and wait for the answer.
+- **They answer the open questions in the chat**: write each answer into the related section of the file first, then confirm and plan. The file is the planner's only input, so an answer that lives only in the chat is re-assumed.
 - **They want to run it themselves**: the command, from the project directory:
   ```
   cd <project>            # only if you are not already there

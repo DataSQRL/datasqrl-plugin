@@ -45,7 +45,7 @@ DataSQRL is best used for operational data use cases that have the following sha
 
 DataSQRL can also build event-driven microservices that ingest events satisfying a declared schema and process them as above. Meaning, DataSQRL is not limited to use cases where data sources are already available but can also define data sources that publishers post/submit to.
 
-Common use cases include: building data lakes, ETL pipelines, feature stores, user analytics APIs, recommendation engines, MCP data tools for agents, executing user submitted analytics queries on request or periodically, and many more.
+Common use cases include: building data lakes, ETL pipelines, feature stores, user analytics APIs, recommendation engines, MCP data tools for agents, processing analytics requests that users submit as events, on demand or continuously, and many more.
 
 DataSQRL ensures that all implementations provide observability and data quality checks and pass rigorous test suites, making DataSQRL particularly suitable for operational use cases.
 
@@ -241,7 +241,7 @@ The offer invites the user to read the file; advance to the next stage on their 
 
 ### 1. Requirements, and 2. their review
 
-Use the [`requirements` skill](../requirements/SKILL.md), unless the user already has a requirements document. Planning converts every gap in the requirements into a recorded assumption, so run this stage for a simple-sounding request too.
+Use the [`requirements` skill](../requirements/SKILL.md). When the user already has a requirements document, use that skill on it. Run its section 4 check and its section 5 hand-off. Planning converts every gap in the requirements into a recorded assumption, so run this stage for a simple-sounding request too.
 
 That skill ends by listing the open questions and asking the user to review the document. Wait for their answer. When they answer open questions in the chat, write the answers into the requirements file first; the planner reads the requirements file only. With the user confirmation, continue with the planning stage by invoking [`plan` skill](../plan/SKILL.md)
 

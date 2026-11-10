@@ -1,33 +1,14 @@
 ---
 name: plan
-description: Use when DataSQRL requirements exist and the next step is a plan, or when the user asks to plan a DataSQRL pipeline or data catalog. Reviews the requirements for missing architecture drivers, then runs the DataSQRL Code Agent in planning mode over a requirements document or a requirements string, producing a reviewable, checkbox-tracked adr/plan_<ts>.md. Takes an optional path to a requirements .md, or inline requirements text.
+description: Use when DataSQRL requirements exist and the next step is a plan, or when the user asks to plan a DataSQRL pipeline or data catalog. Runs the DataSQRL Code Agent in planning mode over a requirements document or a requirements string, producing a reviewable, checkbox-tracked adr/plan_<ts>.md. Takes an optional path to a requirements .md, or inline requirements text.
 argument-hint: <requirements text | path to a requirements .md>
-allowed-tools: Bash, Read, Edit, Skill
+allowed-tools: Bash, Read, Skill
 ---
 Run the DataSQRL Code Agent in **planning** mode on the current project.
 
 **Working directory**: run `datasqrl-agent.sh` in the project directory — the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to. `adr/` is resolved relative to that directory.
 
 **Precondition:** the requirements come from the user — a file they wrote or approved, or text they gave you. When no requirements document exists yet, use the [`requirements` skill](../requirements/SKILL.md) first.
-
-## Step 0 — review the requirements
-
-Read the requirements (the file at `$ARGUMENTS`, or the inline text) and check each [architecture driver](../requirements/SKILL.md#architecture-drivers):
-
-1. Sources, and which data the project captures and manages itself (API, Kafka topic, Iceberg table)
-2. Results (data lake / data product, API, stream) and whether they need authorization
-3. Freshness as an acceptable staleness; a "realtime" requirement says why minutes would not do
-4. Workload, budget and reliability
-5. API latency SLA, when results are served through an API
-6. Authorization claims (API) or tags (data lake / data product), when access is authorized
-7. What, not how: any how is a marked hard constraint
-
-A driver is covered when it has a stated value, an open question with a recommended default, or an explicit note that it does not apply.
-
-- **All covered**: go to Step 1 without asking.
-- **Gaps found**: list each gap in one line (what is missing, and what the planner will assume in its place), then ask the user whether to clarify or to plan as is, and **wait for their answer**.
-  - **They clarify**: write their answers into the requirements file (for inline text, fold them into the text you pass), then go to Step 1.
-  - **They proceed**: go to Step 1 with the requirements unchanged. The planner records its own assumptions for the gaps.
 
 ## Step 1 — start the run
 
@@ -43,7 +24,7 @@ bash "$CODEAGENT" "$ARGUMENTS" --mode planning --detach [run choices]
 - **Run the first two lines exactly as written.** They locate the launcher (`datasqrl-agent.sh`).
 - **Run choices:** run with the choices settled during setup, as [`agent-setup.md`](../start/reference/agent-setup.md#passing-the-run-choices) describes. With none settled, add nothing: the run uses the defaults.
 - `$ARGUMENTS` is inline requirements text, or a path to a requirements file inside the project (adr/requirements_<>.md). When it is a path, confirm the file exists before launching.
-- Pass `$ARGUMENTS` verbatim (with any clarifications from Step 0 folded in) and launch without further review. The planning agent records its own assumptions for anything the requirements leave unspecified.
+- Pass `$ARGUMENTS` verbatim and launch. The planning agent records its own assumptions for anything the requirements leave unspecified.
 - The printed run name confirms the container **started**.
 - A non-zero exit means the run never started — failed preflight (Docker down, image missing, no credential), or a run already in progress for this project. Report that message verbatim and end the turn.
 
