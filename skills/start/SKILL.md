@@ -60,7 +60,8 @@ bash "$CODEAGENT" --image-exists
 It prints one line naming the selected image and its edition, then:
 
 - **`is present · edition: … · version: …`:** tell the user in one line which edition and version this build uses, and continue to 1b.
-- **`is missing`:** ask the user which edition they want, with what each needs, from the table in [`reference/agent-setup.md`](reference/agent-setup.md#edition-which-image-runs): the open-source edition needs nothing; pro needs either the token DataSQRL gave them, set as `DATASQRL_PRO_TOKEN` in their shell profile followed by a restart of their coding agent, or their own GitHub account with pro access and a one-time `docker login ghcr.io`. Mention the edition the line named as the one currently selected. Once the user has answered and done what their edition needs, run that edition's pull command from the table.
+- **`is missing`:** ask the user which edition they want, with what each needs, from the table in [`reference/agent-setup.md`](reference/agent-setup.md#edition-which-image-runs): the open-source edition needs nothing; pro needs `DATASQRL_PRO_TOKEN` in their shell profile, then a restart of their coding agent. The token is the one DataSQRL gave them, or a `read:packages` token from their own GitHub account with pro access. Mention the edition the line named as the one currently selected. Once the user has answered and done what their edition needs, run that edition's pull command from the table.
+- **`has no checked signature`:** the image on this machine did not pass this launcher's signature check. Tell the user in one line that the launcher replaces it with a signed image. Then run `bash "$CODEAGENT" --pull-image`. A pro pull needs `DATASQRL_PRO_TOKEN`. Without it, the pull stops with the message that the table below covers.
 
 When the user mentions pro access while the open-source edition is in use, give them the same two pro routes; after the pro pull, every later command selects pro by itself.
 
@@ -71,7 +72,7 @@ When the user mentions pro access while the open-source edition is in use, give 
 | The message says | Meaning | What to do |
 |---|---|---|
 | `Cannot connect to the Docker daemon` or `Is Docker running?` | Docker is not running | ask them to start Docker, then retry once |
-| `The pro image is private` | pro is selected, with no access set up | ask for the token DataSQRL gave them, and have them set it as `DATASQRL_PRO_TOKEN` in their own shell |
+| `every pro pull needs a token` | pro is selected, with no access set up | ask for the token DataSQRL gave them, and have them set it as `DATASQRL_PRO_TOKEN` in their own shell |
 | `invalid or expired` | DataSQRL's token was rejected | ask them to get a new token from DataSQRL |
 | `has not been given access` | the token's account cannot read the pro image | ask them to contact DataSQRL |
 | anything else | unknown | relay it verbatim and stop |

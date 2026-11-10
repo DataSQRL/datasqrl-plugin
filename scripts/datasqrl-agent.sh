@@ -25,7 +25,8 @@
 #              background right after --detach and let your harness notify you when it exits.
 #   --pull-image    Pull the selected edition's image, or update it when a newer build exists.
 #                   Starts no run.
-#   --image-exists  Print whether the selected edition's image is local; exit 0 or 1. Never pulls.
+#   --image-exists  Print whether the selected edition's image is local and checked; exit 0 or 1.
+#                   Never pulls.
 #   --show-options [ID]  Print the harnesses, providers and default models the selected image offers,
 #                   which variables each provider needs, and whether each is set (never a value).
 #                   With ID or --provider ID, that provider alone. Takes --harness for another
@@ -39,7 +40,13 @@
 #
 # The image flags work in any directory. --pull-image and --image-exists take no other argument. The edition is os unless
 # DATASQRL_AGENT_EDITION=pro, DATASQRL_PRO_TOKEN is set, or pro-agent:latest is already exist.
-# DATASQRL_PRO_TOKEN is a GitHub token with read:packages; it unlocks the private pro image.
+# DATASQRL_PRO_TOKEN is a GitHub token with read:packages; it unlocks the private pro image. Every
+# pro pull needs it, because the signature check after the pull reads the private pro signature.
+#
+# Every pull is checked: cosign verifies that DataSQRL's release workflow on main signed the image,
+# and the launcher runs only an image it verified on this machine. The check needs network access
+# to Sigstore (sigstore.dev). DATASQRL_AGENT_IMAGE runs a local image, such as a local build,
+# without the check.
 #
 # REQUIRES A GIT REPOSITORY. Run it from the SQRL project directory you want to build; the
 # repository around that project defines what the agent can see:
@@ -74,9 +81,11 @@
 # AWS_SECRET_ACCESS_KEY uploads the run log to DataSQRL for troubleshooting and debugging. Without
 # DATASQRL_TELEMETRY=1 the log stays in the project, whatever AWS credentials are set.
 
-# The images. Each edition is published under its own name and runs under a short local tag, the
-# same tag `build-docker-local.sh` gives a local build, so a local build is picked up with no extra
-# flag. Preflight pulls the published image and tags it when the local tag is missing.
+# The images. Each edition is published under its own name and runs under a short local tag.
+# Preflight pulls the published image and tags it when the local tag is missing. Every pull is
+# checked: the launcher runs only an image whose signature it verified on this machine, and it
+# runs that image by its ID. A local build from `build-docker-local.sh` has the same tag but no
+# signature, so it runs only through DATASQRL_AGENT_IMAGE.
 OS_REGISTRY_IMAGE="ghcr.io/datasqrl/adv-agent:latest"
 OS_LOCAL_IMAGE="adv-agent:latest"
 PRO_REGISTRY_IMAGE="ghcr.io/datasqrl/pro-agent:latest"
@@ -84,6 +93,16 @@ PRO_LOCAL_IMAGE="pro-agent:latest"
 # A name for people typing `docker run` by hand: the pro image when there is one, else os.
 # Runs never use it, since it moves with whichever edition was pulled.
 COMMON_IMAGE="datasqrl-agent:latest"
+
+# The signature check. CI signs each published image with keyless cosign, so a valid signature
+# names DataSQRL's release workflow on main. The cosign image is pinned by digest, because a tag
+# can move and this image decides what the launcher trusts.
+COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d"
+SIGNER_IDENTITY="https://github.com/DataSQRL/code-agent/.github/workflows/build-and-push.yml@refs/heads/main"
+SIGNER_ISSUER="https://token.actions.githubusercontent.com"
+# The IDs of the images whose signature this machine verified, one per line.
+LAUNCHER_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/datasqrl-agent"
+VERIFIED_IMAGES_FILE="$LAUNCHER_STATE_DIR/verified-images"
 
 # --- Image helpers -----------------------------------------------------------------------------
 # Sets RUN_EDITION, REGISTRY_IMAGE and LOCAL_IMAGE. The first rule that matches wins:
@@ -131,7 +150,8 @@ image_summary() {
 # the read:packages scope. The token only ever travels on stdin, never as an argument, so `ps`
 # cannot show it, and it is not forwarded into the container. GHCR identifies the account from
 # the token alone, but the login uses the token owner's real username, as GitHub documents it.
-# Docker keeps the login, so later pulls need no token.
+# Sets PRO_LOGIN_USER, which the signature check needs too. Every pro pull logs in again, because
+# the signature check cannot use Docker's stored login.
 pro_login() {
     if ! command -v curl >/dev/null 2>&1; then
         echo "Error: DATASQRL_PRO_TOKEN needs curl on this machine to look up the token's account." >&2
@@ -158,47 +178,179 @@ pro_login() {
         echo "pro edition from DataSQRL." >&2
         exit 1
     fi
+    PRO_LOGIN_USER="$_user"
     echo "Logged in to ghcr.io as $_user." >&2
 }
 
-# Pulls REGISTRY_IMAGE and tags it as LOCAL_IMAGE. A failed pull stops the launcher. It never
-# switches to the other edition, because that would give a pro user the os image.
+# Exit 0 when this machine verified the signature of the image with ID $1.
+is_verified_image() {
+    [ -n "$1" ] && [ -f "$VERIFIED_IMAGES_FILE" ] && grep -qxF "$1" "$VERIFIED_IMAGES_FILE"
+}
+
+# Adds image ID $1 to the record. A record that cannot be written costs a new pull and check on the
+# next run, not this run, so it is a warning.
+record_verified_image() {
+    is_verified_image "$1" && return 0
+    if ! { mkdir -p "$LAUNCHER_STATE_DIR" && printf '%s\n' "$1" >> "$VERIFIED_IMAGES_FILE"; } 2>/dev/null; then
+        echo "Warning: could not write $VERIFIED_IMAGES_FILE, so the next run checks this image again." >&2
+    fi
+}
+
+# Prints the digest that `docker pull` recorded for $1, a registry image such as
+# ghcr.io/datasqrl/adv-agent:latest. An image can carry digests for several names, so only the one
+# for the pulled repository counts.
+pulled_digest() {
+    docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null \
+        | grep "^${1%:*}@" | head -1 | cut -d@ -f2
+}
+
+# Verifies that DataSQRL's release workflow on main signed $1@$2, for example
+# ghcr.io/datasqrl/pro-agent@sha256:... It runs the pinned cosign image. The pro signature is as
+# private as the pro image, so cosign needs a login: it reads it from a Docker config file that
+# exists only for this check. A file keeps the token out of every command's arguments, and a
+# folder under the home directory is one that every Docker setup shares with containers.
+verify_image_signature() {
+    local _repository="$1" _digest="$2" _auth_dir="" _out _rc
+    local _cosign_args=(--rm --user "$(id -u):$(id -g)" -e HOME=/tmp)
+    if [ "$RUN_EDITION" = "pro" ]; then
+        mkdir -p "$LAUNCHER_STATE_DIR" 2>/dev/null
+        # A run killed during a check leaves its login folder behind; no check is running now.
+        rm -rf "$LAUNCHER_STATE_DIR"/cosign-auth.* 2>/dev/null
+        if ! _auth_dir="$(mktemp -d "$LAUNCHER_STATE_DIR/cosign-auth.XXXXXX" 2>/dev/null)"; then
+            echo "Error: could not make a folder in $LAUNCHER_STATE_DIR for the signature check." >&2
+            return 1
+        fi
+        chmod 700 "$_auth_dir"
+        (
+            umask 077
+            printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
+                "$(printf '%s:%s' "$PRO_LOGIN_USER" "$DATASQRL_PRO_TOKEN" | base64 | tr -d '\n')" \
+                > "$_auth_dir/config.json"
+        )
+        _cosign_args+=(-v "$_auth_dir:/cosign-auth:ro" -e DOCKER_CONFIG=/cosign-auth)
+    fi
+    echo "Checking the signature of $_repository@$_digest..." >&2
+    _out="$(docker run "${_cosign_args[@]}" "$COSIGN_IMAGE" verify \
+        --certificate-identity "$SIGNER_IDENTITY" \
+        --certificate-oidc-issuer "$SIGNER_ISSUER" \
+        "$_repository@$_digest" 2>&1 >/dev/null)"
+    _rc=$?
+    [ -n "$_auth_dir" ] && rm -rf "$_auth_dir"
+    if [ "$_rc" = "0" ]; then
+        echo "Signature verified: DataSQRL's release workflow built this image on main." >&2
+        return 0
+    fi
+    echo "" >&2
+    echo "Error: the signature check failed for $_repository@$_digest, so the launcher will not run it." >&2
+    if printf '%s' "$_out" | grep -qiE 'no signatures found|no matching signatures|none of the expected identities'; then
+        echo "The image has no signature from DataSQRL's release workflow. Do not run it. Report this to DataSQRL." >&2
+    elif printf '%s' "$_out" | grep -qiE 'sigstore|tuf|rekor|fulcio|dial tcp|no such host|timeout|connection refused'; then
+        echo "The check needs network access to Sigstore (sigstore.dev) and to ghcr.io. Check the network, then run again." >&2
+    fi
+    echo "cosign said: $(printf '%s\n' "$_out" | grep -v '^WARNING' | tail -1)" >&2
+    return 1
+}
+
+# Pulls REGISTRY_IMAGE, verifies its signature, tags it as LOCAL_IMAGE and records its ID. Sets
+# CHECKED_IMAGE_ID. A failed pull or check stops the launcher, and a failed check removes the
+# pulled image. It never switches to the other edition, because that would give a pro user the os
+# image.
 ensure_image() {
-    if [ "$RUN_EDITION" = "pro" ] && [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
+    local _digest
+    if [ "$RUN_EDITION" = "pro" ]; then
+        if [ -z "${DATASQRL_PRO_TOKEN:-}" ]; then
+            echo "Error: the pro image and its signature are private, so every pro pull needs a token." >&2
+            echo "Set DATASQRL_PRO_TOKEN to the token DataSQRL gave you." >&2
+            echo "" >&2
+            echo "If DataSQRL has given your own GitHub account access to the pro edition, you can use" >&2
+            echo "a personal access token (classic) from that account with the 'read:packages' scope" >&2
+            echo "instead. Set it in the shell that starts your coding agent, for example in ~/.zshrc." >&2
+            echo "To run the open-source edition instead, set DATASQRL_AGENT_EDITION=os." >&2
+            exit 1
+        fi
         pro_login
     fi
     echo "Pulling $REGISTRY_IMAGE ($RUN_EDITION edition, ~3GB the first time)..." >&2
     if ! docker pull "$REGISTRY_IMAGE"; then
         echo "" >&2
         echo "Error: could not pull '$REGISTRY_IMAGE'." >&2
-        if [ "$RUN_EDITION" = "pro" ] && [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
+        if [ "$RUN_EDITION" = "pro" ]; then
             echo "" >&2
             echo "The login worked, so the token's GitHub account most likely has not been given access" >&2
             echo "to the pro edition by DataSQRL. Ask DataSQRL to grant it, or set DATASQRL_AGENT_EDITION=os" >&2
             echo "to run the open-source edition." >&2
-        elif [ "$RUN_EDITION" = "pro" ]; then
-            echo "" >&2
-            echo "The pro image is private. Set DATASQRL_PRO_TOKEN to the token DataSQRL gave you." >&2
-            echo "" >&2
-            echo "If DataSQRL has given your own GitHub account access to the pro edition, you can use" >&2
-            echo "a personal access token (classic) from that account with the 'read:packages' scope" >&2
-            echo "instead: set it as DATASQRL_PRO_TOKEN, or log in once yourself:" >&2
-            echo "" >&2
-            echo "  echo \"\$GITHUB_PAT\" | docker login ghcr.io -u <your-github-username> --password-stdin" >&2
-            echo "" >&2
-            echo "Then re-run this command. To run the open-source edition instead, set DATASQRL_AGENT_EDITION=os." >&2
         fi
+        exit 1
+    fi
+    _digest="$(pulled_digest "$REGISTRY_IMAGE")"
+    if [ -z "$_digest" ]; then
+        echo "Error: pulled '$REGISTRY_IMAGE' but Docker recorded no digest for it, so its signature cannot be checked." >&2
+        docker rmi "$REGISTRY_IMAGE" >/dev/null 2>&1
+        exit 1
+    fi
+    if ! verify_image_signature "${REGISTRY_IMAGE%:*}" "$_digest"; then
+        docker rmi "$REGISTRY_IMAGE" >/dev/null 2>&1
         exit 1
     fi
     if ! docker tag "$REGISTRY_IMAGE" "$LOCAL_IMAGE"; then
         echo "Error: pulled '$REGISTRY_IMAGE' but could not tag it as '$LOCAL_IMAGE'." >&2
         exit 1
     fi
+    CHECKED_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$LOCAL_IMAGE" 2>/dev/null)"
+    record_verified_image "$CHECKED_IMAGE_ID"
     # The common tag follows pro whenever pro is local, so pulling os never takes it from pro.
     if [ "$RUN_EDITION" = "pro" ] || ! docker image inspect "$PRO_LOCAL_IMAGE" >/dev/null 2>&1; then
         docker tag "$LOCAL_IMAGE" "$COMMON_IMAGE" >/dev/null 2>&1
     fi
     echo "Pulled $REGISTRY_IMAGE as $LOCAL_IMAGE · $(image_summary "$LOCAL_IMAGE")" >&2
+}
+
+# Sets IMAGE_NAME, the name that messages show, and RUN_IMAGE, what `docker run` gets. RUN_IMAGE
+# is the ID of an image whose signature this machine verified, so the image cannot change between
+# the check and the run. With $1 = pull, a missing or unchecked image is pulled and checked.
+# Without it, nothing is pulled: the function names --pull-image and returns 1.
+select_checked_image() {
+    local _id
+    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
+        # A custom image could point anywhere, so guessing where to fetch it from would be wrong.
+        IMAGE_NAME="$DATASQRL_AGENT_IMAGE"
+        RUN_IMAGE="$DATASQRL_AGENT_IMAGE"
+        if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+            echo "Error: image '$IMAGE_NAME' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
+            echo "Build it, pull it, or unset DATASQRL_AGENT_IMAGE to use the published image." >&2
+            return 1
+        fi
+        echo "Warning: DATASQRL_AGENT_IMAGE is set, so '$IMAGE_NAME' runs without a signature check." >&2
+        return 0
+    fi
+    resolve_edition
+    IMAGE_NAME="$LOCAL_IMAGE"
+    if docker image inspect "$LOCAL_IMAGE" >/dev/null 2>&1; then
+        _id="$(docker image inspect -f '{{.Id}}' "$LOCAL_IMAGE" 2>/dev/null)"
+        if is_verified_image "$_id"; then
+            RUN_IMAGE="$_id"
+            return 0
+        fi
+        if [ "${1:-}" != "pull" ]; then
+            echo "Error: $LOCAL_IMAGE has no checked signature on this machine. Get a signed image first:" >&2
+            echo "  datasqrl-agent.sh --pull-image" >&2
+            return 1
+        fi
+        echo "Image '$LOCAL_IMAGE' has no checked signature on this machine, so the launcher pulls a signed one." >&2
+    else
+        if [ "${1:-}" != "pull" ]; then
+            echo "Error: $LOCAL_IMAGE ($RUN_EDITION edition) is not here yet. Get it first:" >&2
+            echo "  datasqrl-agent.sh --pull-image" >&2
+            return 1
+        fi
+        echo "Image '$LOCAL_IMAGE' not found." >&2
+    fi
+    ensure_image
+    if [ -z "$CHECKED_IMAGE_ID" ]; then
+        echo "Error: Docker reported no ID for '$LOCAL_IMAGE' after the check." >&2
+        return 1
+    fi
+    RUN_IMAGE="$CHECKED_IMAGE_ID"
 }
 
 require_docker() {
@@ -223,8 +375,9 @@ do_pull_image() {
     ensure_image
 }
 
-# --image-exists: one line on stdout, exit 0 when the selected image is local and 1 when it is not.
-# It never pulls, so a caller can decide what to do next.
+# --image-exists: one line on stdout, exit 0 when the selected image is local and checked, 1 when
+# it is missing or has no checked signature. A DATASQRL_AGENT_IMAGE image is never checked, so it
+# only has to be local. It never pulls, so a caller can decide what to do next.
 do_image_exists() {
     if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
         _img="$DATASQRL_AGENT_IMAGE"; _what="$DATASQRL_AGENT_IMAGE"
@@ -233,6 +386,11 @@ do_image_exists() {
         _img="$LOCAL_IMAGE"; _what="$LOCAL_IMAGE ($RUN_EDITION edition)"
     fi
     if docker image inspect "$_img" >/dev/null 2>&1; then
+        if [ -z "${DATASQRL_AGENT_IMAGE:-}" ] \
+           && ! is_verified_image "$(docker image inspect -f '{{.Id}}' "$_img" 2>/dev/null)"; then
+            printf '%s has no checked signature · run: datasqrl-agent.sh --pull-image\n' "$_what"
+            return 1
+        fi
         printf '%s is present · %s\n' "$_img" "$(image_summary "$_img")"
         return 0
     fi
@@ -397,22 +555,8 @@ check_aws() {
 # ready. The image answers for its variables; the AWS check runs here, because the profile and its
 # login live on this machine and never enter the container. Exits 0 when ready and 1 when not.
 do_check_config() {
-    local _img _provider="${DATASQRL_AGENT_PROVIDER:-}" _take=0 _a _out _rc _aws_ok=1 _aws_lines=""
-    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
-        _img="$DATASQRL_AGENT_IMAGE"
-        if ! docker image inspect "$_img" >/dev/null 2>&1; then
-            echo "Error: image '$_img' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
-            return 1
-        fi
-    else
-        resolve_edition
-        _img="$LOCAL_IMAGE"
-        if ! docker image inspect "$_img" >/dev/null 2>&1; then
-            echo "Error: $_img ($RUN_EDITION edition) is not here yet. Get it first:" >&2
-            echo "  datasqrl-agent.sh --pull-image" >&2
-            return 1
-        fi
-    fi
+    local _provider="${DATASQRL_AGENT_PROVIDER:-}" _take=0 _a _out _rc _aws_ok=1 _aws_lines=""
+    select_checked_image || return 1
     for _a in "$@"; do
         if [ "$_take" = "1" ]; then _provider="$_a"; _take=0; continue; fi
         case "$_a" in
@@ -433,9 +577,9 @@ do_check_config() {
     case "$_provider" in amazon-bedrock|bedrock) ;; *) [ "${DATASQRL_TELEMETRY:-}" = "1" ] || unset AWS_PROFILE ;; esac
 
     provider_env_args
-    _out="$(docker run --rm "${PROVIDER_ENV_ARGS[@]}" "$_img" --check-config "$@")"
+    _out="$(docker run --rm "${PROVIDER_ENV_ARGS[@]}" "$RUN_IMAGE" --check-config "$@")"
     _rc=$?
-    printf 'Image              %s · %s\n' "$_img" "$(image_summary "$_img")"
+    printf 'Image              %s · %s\n' "$IMAGE_NAME" "$(image_summary "$IMAGE_NAME")"
     if ! printf '%s\n' "$_out" | grep -q '^Status '; then
         [ -n "$_out" ] && printf '%s\n' "$_out"
         return "$_rc"
@@ -455,25 +599,10 @@ do_check_config() {
 # Provider settings reach the container by name, as for a run, so the image can say which are set.
 # It never pulls: a 3GB download is not a side effect of a question.
 do_show_options() {
-    local _img
-    if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
-        _img="$DATASQRL_AGENT_IMAGE"
-        if ! docker image inspect "$_img" >/dev/null 2>&1; then
-            echo "Error: image '$_img' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
-            return 1
-        fi
-    else
-        resolve_edition
-        _img="$LOCAL_IMAGE"
-        if ! docker image inspect "$_img" >/dev/null 2>&1; then
-            echo "Error: $_img ($RUN_EDITION edition) is not here yet. Get it first:" >&2
-            echo "  datasqrl-agent.sh --pull-image" >&2
-            return 1
-        fi
-    fi
+    select_checked_image || return 1
     provider_env_args
-    printf 'Image              %s · %s\n' "$_img" "$(image_summary "$_img")"
-    docker run --rm "${PROVIDER_ENV_ARGS[@]}" "$_img" --show-options ${OPTIONS_ID:+"$OPTIONS_ID"} "$@"
+    printf 'Image              %s · %s\n' "$IMAGE_NAME" "$(image_summary "$IMAGE_NAME")"
+    docker run --rm "${PROVIDER_ENV_ARGS[@]}" "$RUN_IMAGE" --show-options ${OPTIONS_ID:+"$OPTIONS_ID"} "$@"
 }
 
 # --- Argument partitioning ---------------------------------------------------------------------
@@ -907,23 +1036,9 @@ require_docker
 # Bootstrap the image if this machine has never run the agent before. Doing it here — before
 # anything detaches — is what keeps the "a detached run either starts for real or reports a usable
 # error inline" guarantee: a pull that failed after detaching would leave a vanished container and
-# an empty log.
-if [ -n "${DATASQRL_AGENT_IMAGE:-}" ]; then
-    # A custom image could point anywhere, so guessing where to fetch it from would be wrong.
-    IMAGE="$DATASQRL_AGENT_IMAGE"
-    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-        echo "Error: image '$IMAGE' (from DATASQRL_AGENT_IMAGE) is not present locally." >&2
-        echo "Build it, pull it, or unset DATASQRL_AGENT_IMAGE to use the published image." >&2
-        exit 1
-    fi
-else
-    resolve_edition
-    IMAGE="$LOCAL_IMAGE"
-    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-        echo "Image '$IMAGE' not found." >&2
-        ensure_image
-    fi
-fi
+# an empty log. The same step checks the image's signature, and the run uses the checked image ID.
+select_checked_image pull || exit 1
+IMAGE="$RUN_IMAGE"
 
 # A container left behind by a run that was started WITHOUT --rm would hold the name forever;
 # clear it if it is no longer running, so the lock cannot outlive the run that took it.
