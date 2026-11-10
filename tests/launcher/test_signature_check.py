@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import base64
+import signal
+import subprocess
+import time
 
 from tests.launcher.fakes.docker_images import (  # noqa: F401
     GOOD_TOKEN,
+    LAUNCHER,
     OS_REGISTRY,
     PRO_REGISTRY,
     project,
@@ -78,6 +82,42 @@ class TestSignatureCheck:
         assert GOOD_TOKEN not in "\n".join(cosign_args(fake))
         auth = base64.b64encode(f"datasqrl-agent-bot:{GOOD_TOKEN}".encode()).decode()
         assert auth in (fake / "cosign_config").read_text()
+        assert not list((state_dir(fake) / "datasqrl-agent").glob("cosign-auth.*"))
+
+    def test_a_pro_check_keeps_the_login_folder_of_another_check(self, project):
+        """Two launchers can check at the same time, so each one removes only its own folder."""
+        proj, fake, env = project
+        publish(fake, PRO_REGISTRY, "pro")
+        other_check_folder = state_dir(fake) / "datasqrl-agent" / "cosign-auth.othercheck"
+        other_check_folder.mkdir(parents=True)
+        (other_check_folder / "config.json").write_text("{}")
+        r = run_launch(proj, env, DATASQRL_PRO_TOKEN=GOOD_TOKEN)
+        assert r.returncode == 0, r.stderr
+        assert (other_check_folder / "config.json").exists()
+        assert list((state_dir(fake) / "datasqrl-agent").glob("cosign-auth.*")) == [other_check_folder]
+
+    def test_a_failed_pro_check_removes_its_login_folder(self, project):
+        proj, fake, env = project
+        publish(fake, PRO_REGISTRY, "pro", signed=False)
+        r = run_launch(proj, env, DATASQRL_PRO_TOKEN=GOOD_TOKEN)
+        assert r.returncode == 1
+        assert not list((state_dir(fake) / "datasqrl-agent").glob("cosign-auth.*"))
+
+    def test_a_pro_check_stopped_with_sigterm_removes_its_login_folder(self, project):
+        proj, fake, env = project
+        publish(fake, PRO_REGISTRY, "pro")
+        launcher_process = subprocess.Popen(
+            ["bash", str(LAUNCHER), "--mode", "implementation", "--detach"], cwd=proj,
+            env={**env, "DATASQRL_PRO_TOKEN": GOOD_TOKEN, "FAKE_COSIGN_WAIT": "2"},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 20
+        while not (fake / "cosign_started").exists():
+            assert time.monotonic() < deadline, "the signature check never started"
+            time.sleep(0.05)
+        assert list((state_dir(fake) / "datasqrl-agent").glob("cosign-auth.*"))
+        launcher_process.send_signal(signal.SIGTERM)
+        # Bash runs the EXIT trap, then ends itself with the same signal.
+        assert launcher_process.wait(timeout=20) == -signal.SIGTERM
         assert not list((state_dir(fake) / "datasqrl-agent").glob("cosign-auth.*"))
 
     def test_os_check_uses_no_login(self, project):

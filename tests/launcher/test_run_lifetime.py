@@ -60,6 +60,31 @@ class TestStatus:
         r = launcher(proj, env, "--status")
         assert r.stdout.strip() == "No run in progress. Last result: success · patch · pipeline · 1 refinement(s)"
 
+    def test_complete_statuses_add_no_note(self, project):
+        proj, fake, env = project
+        write_result(proj, run_result(severities=["HIGH"], code_check_status="complete",
+                                      llm_judge_status="complete"))
+        r = launcher(proj, env, "--status")
+        assert r.stdout.strip().endswith("1 issue(s) (0 critical, 1 high, 0 medium, 0 low) · score 25")
+
+    def test_failed_llm_judges_keep_the_score_and_add_a_note(self, project):
+        """The code checks still scored the run, so the line keeps the score and names both kinds of check."""
+        proj, fake, env = project
+        write_result(proj, run_result(severities=["HIGH"], code_check_status="complete",
+                                      llm_judge_status="failed"))
+        r = launcher(proj, env, "--status")
+        assert r.stdout.strip() == (
+            "No run in progress. Last result: success · implementation · pipeline · 1 refinement(s) · "
+            "1 issue(s) (0 critical, 1 high, 0 medium, 0 low) · score 25 "
+            "[code checks: complete, LLM judges: failed]"
+        )
+
+    def test_partial_code_checks_without_llm_judges_name_only_the_code_checks(self, project):
+        proj, fake, env = project
+        write_result(proj, run_result(severities=["HIGH"], code_check_status="partial"))
+        r = launcher(proj, env, "--status")
+        assert r.stdout.strip().endswith("· score 25 [code checks: partial]")
+
     def test_nothing_ever_ran(self, project):
         proj, fake, env = project
         r = launcher(proj, env, "--status")

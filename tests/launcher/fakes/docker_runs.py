@@ -106,13 +106,14 @@ def write_result(proj: Path, *runs: dict) -> None:
 
 
 def run_result(mode="implementation", success=True, scenario="pipeline", refinements=1,
-               severities=None) -> dict:
+               severities=None, code_check_status=None, llm_judge_status=None) -> dict:
     """One run entry as the agent writes it. `severities` lists one issue each; None means no
-    judge ran, so `issue_score` is null."""
+    judge ran, so `issue_score` is null. The two statuses are null when no check of that kind ran."""
     issues = [issue(sev, f"issue {i}") for i, sev in enumerate(severities or [])]
     return {
         "success": success, "mode": mode, "scenario": scenario, "refinements": refinements,
         "issue_score": None if severities is None else calculate_issue_score(issues),
+        "code_check_status": code_check_status, "llm_judge_status": llm_judge_status,
         "issue_count": {"total": len(issues), **count_by_severity(issues)},
         "issues": issues,
     }

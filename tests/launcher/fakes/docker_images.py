@@ -6,7 +6,8 @@ label, its repo digests and its image ID, so `docker tag` copies them and `docke
 reads them back.
 
 A `docker run` of the cosign image is the signature check. It passes when the checked digest is
-listed in FAKE_DOCKER_DIR/signed, and it fails with FAKE_COSIGN_ERROR when that is set.
+listed in FAKE_DOCKER_DIR/signed, and it fails with FAKE_COSIGN_ERROR when that is set. With
+FAKE_COSIGN_WAIT set, it writes FAKE_DOCKER_DIR/cosign_started and waits that many seconds first.
 """
 
 from __future__ import annotations
@@ -64,6 +65,7 @@ case "$1" in
           fi
           prev="$a"; target="$a"
         done
+        if [ -n "${FAKE_COSIGN_WAIT:-}" ]; then touch "$D/cosign_started"; sleep "$FAKE_COSIGN_WAIT"; fi
         if [ -n "${FAKE_COSIGN_ERROR:-}" ]; then echo "$FAKE_COSIGN_ERROR" >&2; exit 1; fi
         grep -qx "${target#*@}" "$D/signed" 2>/dev/null && exit 0
         echo "Error: no signatures found" >&2; exit 10 ;;

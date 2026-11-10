@@ -84,8 +84,8 @@
 # The images. Each edition is published under its own name and runs under a short local tag.
 # Preflight pulls the published image and tags it when the local tag is missing. Every pull is
 # checked: the launcher runs only an image whose signature it verified on this machine, and it
-# runs that image by its ID. A local build from `build-docker-local.sh` has the same tag but no
-# signature, so it runs only through DATASQRL_AGENT_IMAGE.
+# runs that image by its ID. A local build from `build-docker-local.sh` gets its own tag
+# (adv-agent:local, pro-agent:local) and no signature, so it runs only through DATASQRL_AGENT_IMAGE.
 OS_REGISTRY_IMAGE="ghcr.io/datasqrl/adv-agent:latest"
 OS_LOCAL_IMAGE="adv-agent:latest"
 PRO_REGISTRY_IMAGE="ghcr.io/datasqrl/pro-agent:latest"
@@ -103,6 +103,15 @@ SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 # The IDs of the images whose signature this machine verified, one per line.
 LAUNCHER_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/datasqrl-agent"
 VERIFIED_IMAGES_FILE="$LAUNCHER_STATE_DIR/verified-images"
+
+# The temporary files and folders this run removes when it exits. Bash runs the EXIT trap also
+# after Ctrl-C, SIGTERM and SIGHUP. Bash keeps one trap per signal, so every temporary path goes
+# into this one list instead of into a trap of its own.
+PATHS_TO_REMOVE_ON_EXIT=()
+remove_paths_on_exit() {
+    [ "${#PATHS_TO_REMOVE_ON_EXIT[@]}" -eq 0 ] || rm -rf "${PATHS_TO_REMOVE_ON_EXIT[@]}"
+}
+trap remove_paths_on_exit EXIT
 
 # --- Image helpers -----------------------------------------------------------------------------
 # Sets RUN_EDITION, REGISTRY_IMAGE and LOCAL_IMAGE. The first rule that matches wins:
@@ -214,12 +223,13 @@ verify_image_signature() {
     local _cosign_args=(--rm --user "$(id -u):$(id -g)" -e HOME=/tmp)
     if [ "$RUN_EDITION" = "pro" ]; then
         mkdir -p "$LAUNCHER_STATE_DIR" 2>/dev/null
-        # A run killed during a check leaves its login folder behind; no check is running now.
-        rm -rf "$LAUNCHER_STATE_DIR"/cosign-auth.* 2>/dev/null
         if ! _auth_dir="$(mktemp -d "$LAUNCHER_STATE_DIR/cosign-auth.XXXXXX" 2>/dev/null)"; then
             echo "Error: could not make a folder in $LAUNCHER_STATE_DIR for the signature check." >&2
             return 1
         fi
+        # Each check removes only its own folder. Another launcher can be in its own check now,
+        # and its folder holds the login that check needs.
+        PATHS_TO_REMOVE_ON_EXIT+=("$_auth_dir")
         chmod 700 "$_auth_dir"
         (
             umask 077
@@ -1179,7 +1189,7 @@ write_temp_credentials() {
     else
         TEMP_CREDENTIALS="$(mktemp)"
         printf '%s' "$1" > "$TEMP_CREDENTIALS"
-        trap 'rm -f "$TEMP_CREDENTIALS"' EXIT
+        PATHS_TO_REMOVE_ON_EXIT+=("$TEMP_CREDENTIALS")
     fi
     CREDENTIALS_FILE="$TEMP_CREDENTIALS"
 }
