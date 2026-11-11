@@ -62,12 +62,18 @@ The run belongs to the Docker daemon, not to your session, which means:
 
 - **Docker**, running locally. The agent image is fetched and tagged automatically on first use,
   with no manual `docker pull` or `docker tag`. It is the open-source edition, which anyone can
-  pull. For the pro edition, set `DATASQRL_PRO_TOKEN` in the shell that starts your coding agent
-  to the token DataSQRL gave you. If DataSQRL has given your own GitHub account access to the pro
-  edition, a personal access token (classic) from that account with the `read:packages` scope
-  works the same way. The launcher then logs in and pulls pro. Every pro pull needs the token.
-  Set it in your shell profile, such as `~/.zshrc`, not in the chat with your coding agent.
-- **Signed images.** After each pull, the launcher checks that DataSQRL's release workflow signed the image. It runs only an image that it checked on your machine, and it deletes an image that fails the check. The check runs the `cosign` tool in Docker, so you install nothing. It needs network access to Sigstore (`sigstore.dev`) and to `ghcr.io`.
+  pull. Every pro pull needs a ghcr.io login from a GitHub account with pro access. There are two
+  ways to give it:
+  - **Your own GitHub account.** If DataSQRL has given your account access to the pro edition, run
+    `docker login ghcr.io` once with a personal access token (classic) that has the
+    `read:packages` scope. The launcher uses the login that Docker stored. For the first pull,
+    select pro with `DATASQRL_AGENT_EDITION=pro datasqrl-agent.sh --pull-image`. After that, the
+    local pro image selects pro on every run.
+  - **A token from DataSQRL.** Set `DATASQRL_PRO_TOKEN` in the shell that starts your coding agent
+    to the token DataSQRL gave you. The launcher then logs in and pulls pro. The token wins over a
+    stored login. Set it in your shell profile, such as `~/.zshrc`, not in the chat with your
+    coding agent.
+- **Signed images.** After each pull, the launcher checks that DataSQRL's release workflow signed the image. It runs only an image that it checked on your machine, and it deletes an image without a valid signature. After a network error, it keeps the image, so the next try needs no new download. The check runs the `cosign` tool in Docker, so you install nothing. The launcher pulls the `cosign` image, about 60MB, before the first agent image. It needs network access to Sigstore (`sigstore.dev`) and to `ghcr.io`.
 - A **model provider credential**: `ANTHROPIC_API_KEY` for the default provider, or the variables of the provider you choose, such as `FIREWORKS_API_KEY` or an AWS profile for Amazon Bedrock. Set them in the shell that starts your coding agent, not in the chat with it. `datasqrl-agent.sh --show-options` lists the providers and what each needs, and `datasqrl-agent.sh --check-config` tells you whether a run is ready. Your coding agent runs both for you during setup; [`skills/start/reference/agent-setup.md`](skills/start/reference/agent-setup.md) explains them.
 - **AWS credentials only for Amazon Bedrock.** The run log stays in your project. Telemetry is off by default; opt in with `DATASQRL_TELEMETRY=1` and AWS keys, which shares it with DataSQRL for troubleshooting and debugging.
 - A **git repository**. The repo is mounted read-only so the agent can discover sibling projects

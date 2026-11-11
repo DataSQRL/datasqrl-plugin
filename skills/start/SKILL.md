@@ -60,8 +60,8 @@ bash "$CODEAGENT" --image-exists
 It prints one line naming the selected image and its edition, then:
 
 - **`is present · edition: … · version: …`:** tell the user in one line which edition and version this build uses, and continue to 1b.
-- **`is missing`:** ask the user which edition they want, with what each needs, from the table in [`reference/agent-setup.md`](reference/agent-setup.md#edition-which-image-runs): the open-source edition needs nothing; pro needs `DATASQRL_PRO_TOKEN` in their shell profile, then a restart of their coding agent. The token is the one DataSQRL gave them, or a `read:packages` token from their own GitHub account with pro access. Mention the edition the line named as the one currently selected. Once the user has answered and done what their edition needs, run that edition's pull command from the table.
-- **`has no checked signature`:** the image on this machine did not pass this launcher's signature check. Tell the user in one line that the launcher replaces it with a signed image. Then run `bash "$CODEAGENT" --pull-image`. A pro pull needs `DATASQRL_PRO_TOKEN`. Without it, the pull stops with the message that the table below covers.
+- **`is missing`:** ask the user which edition they want, with what each needs, from the table in [`reference/agent-setup.md`](reference/agent-setup.md#edition-which-image-runs): the open-source edition needs nothing; pro needs a ghcr.io login. A user whose own GitHub account has pro access runs `docker login ghcr.io` in their own terminal, once. A user with a token from DataSQRL sets it as `DATASQRL_PRO_TOKEN` in their shell profile, then restarts their coding agent. Mention the edition the line named as the one currently selected. Once the user has answered and done what their edition needs, run that edition's pull command from the table.
+- **`has no checked signature`:** the image on this machine did not pass this launcher's signature check. Tell the user in one line that the launcher replaces it with a signed image. Then run `bash "$CODEAGENT" --pull-image`. A pro pull needs a ghcr.io login: `DATASQRL_PRO_TOKEN`, or a login that `docker login ghcr.io` stored. Without either, the pull stops with the message that the table below covers.
 
 When the user mentions pro access while the open-source edition is in use, give them the same two pro routes; after the pro pull, every later command selects pro by itself.
 
@@ -72,9 +72,10 @@ When the user mentions pro access while the open-source edition is in use, give 
 | The message says | Meaning | What to do |
 |---|---|---|
 | `Cannot connect to the Docker daemon` or `Is Docker running?` | Docker is not running | ask them to start Docker, then retry once |
-| `every pro pull needs a token` | pro is selected, with no access set up | ask for the token DataSQRL gave them, and have them set it as `DATASQRL_PRO_TOKEN` in their own shell |
+| `a pro pull needs a ghcr.io login` | pro is selected, with no login set up | give them the two pro routes: `docker login ghcr.io` in their own terminal with their own account, or the token DataSQRL gave them as `DATASQRL_PRO_TOKEN` in their own shell |
 | `invalid or expired` | DataSQRL's token was rejected | ask them to get a new token from DataSQRL |
 | `has not been given access` | the token's account cannot read the pro image | ask them to contact DataSQRL |
+| `refused the pull for` | the stored login expired, or its account has no pro access | ask them to run `docker login ghcr.io` again in their own terminal. If the pull fails again, ask them to contact DataSQRL and use open source version (advance agent i.e. adv-agent) |
 | anything else | unknown | relay it verbatim and stop |
 
 Leave the token in the user's hands: they set it in their own shell. A token pasted into this conversation would land in your transcript.
