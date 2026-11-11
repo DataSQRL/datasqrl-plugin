@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -113,6 +114,8 @@ STORED_LOGIN_SECRET = "ghp_storedsecret456"
 
 OS_REGISTRY = "ghcr.io/datasqrl/adv-agent:latest"
 PRO_REGISTRY = "ghcr.io/datasqrl/pro-agent:latest"
+# The pinned cosign image, read from the launcher so the two cannot differ.
+COSIGN_IMAGE = re.search(r'^COSIGN_IMAGE="([^"]+)"$', LAUNCHER.read_text(), re.MULTILINE).group(1)
 
 
 def _key(name: str) -> str:
@@ -135,6 +138,8 @@ def project(tmp_path: Path):
     fake = tmp_path / "fake-docker"
     (fake / "registry").mkdir(parents=True)
     (fake / "images").mkdir()
+    # ghcr.io serves the cosign image, and it is not local yet.
+    (fake / "registry" / _key(COSIGN_IMAGE)).write_text("\n\n\nsha256:id-cosign\n")
     proj = tmp_path / "proj"
     (proj / ".claude").mkdir(parents=True)
     home = tmp_path / "home"
@@ -222,6 +227,15 @@ def have_local(fake: Path, name: str, edition: str, version: str = "1.0.5",
             record_file.write(image_id(name) + "\n")
 
 
+def have_cosign_local(fake: Path) -> None:
+    (fake / "images" / _key(COSIGN_IMAGE)).write_text("\n\n\nsha256:id-cosign\n")
+
+
+def unpublish_cosign(fake: Path) -> None:
+    """ghcr.io cannot serve the cosign image, as when its download fails."""
+    (fake / "registry" / _key(COSIGN_IMAGE)).unlink()
+
+
 def local_edition(fake: Path, name: str) -> str | None:
     f = fake / "images" / _key(name)
     return f.read_text().splitlines()[0] if f.exists() else None
@@ -267,10 +281,16 @@ def ran_image_id(fake: Path) -> str | None:
     return next((a for a in args_file.read_text().splitlines() if a.startswith("sha256:")), None)
 
 
-def pulls(fake: Path) -> list[str]:
+def all_pulls(fake: Path) -> list[str]:
+    """Every `docker pull`, in order, the cosign image included."""
     calls = fake / "calls"
     lines = calls.read_text().splitlines() if calls.exists() else []
     return [line.split()[1] for line in lines if line.startswith("pull ")]
+
+
+def pulls(fake: Path) -> list[str]:
+    """The agent image pulls, without the cosign image."""
+    return [name for name in all_pulls(fake) if name != COSIGN_IMAGE]
 
 
 def calls(fake: Path, name: str = "calls") -> str:

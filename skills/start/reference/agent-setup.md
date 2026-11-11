@@ -25,7 +25,7 @@ What each edition needs before its first pull:
 | pro, with the user's own GitHub account that DataSQRL gave access to | the user runs `docker login ghcr.io` in their own terminal with that account and a classic `read:packages` token. A user who already did this needs nothing more | `DATASQRL_AGENT_EDITION=pro bash "$CODEAGENT" --pull-image` |
 | pro, with the token DataSQRL gave the user | the user sets `DATASQRL_PRO_TOKEN` in their shell profile and restarts their coding agent | `bash "$CODEAGENT" --pull-image` |
 
-The launcher checks every pull. It verifies that DataSQRL's release workflow signed the image. It deletes an image that fails the check, and it runs only an image it checked on this machine.
+The launcher checks every pull. It verifies that DataSQRL's release workflow signed the image. It deletes an image without a valid signature, and it runs only an image it checked on this machine. After a network error, it keeps the pulled image, so the next `--pull-image` needs no new download. Before the first agent image, it pulls the signature checker (`cosign`, about 60MB). If that pull fails, the launcher stops before the agent image.
 
 The pro signature is private like the pro image. So every pro pull needs a ghcr.io login, not only the first one. The launcher uses `DATASQRL_PRO_TOKEN` when it is set, and else the ghcr.io login that Docker stored. A stored login alone does not select pro, so the first pull names the edition. Once a checked pro image is on the machine, rule 3 selects it on every later command. A run that pulls nothing needs no login.
 

@@ -259,6 +259,8 @@ pulled_digest() {
 # private as the pro image, so cosign needs a login: it reads it from a Docker config file that
 # exists only for this check. A file keeps the token out of every command's arguments, and a
 # folder under the home directory is one that every Docker setup shares with containers.
+# Returns 0 when the signature is valid, 1 when the image has no valid signature from that
+# workflow, and 2 when the check could not decide, for example after a network error.
 verify_image_signature() {
     local _repository="$1" _digest="$2" _auth_dir="" _out _rc
     local _cosign_args=(--rm --user "$(id -u):$(id -g)" -e HOME=/tmp)
@@ -266,7 +268,7 @@ verify_image_signature() {
         mkdir -p "$LAUNCHER_STATE_DIR" 2>/dev/null
         if ! _auth_dir="$(mktemp -d "$LAUNCHER_STATE_DIR/cosign-auth.XXXXXX" 2>/dev/null)"; then
             echo "Error: could not make a folder in $LAUNCHER_STATE_DIR for the signature check." >&2
-            return 1
+            return 2
         fi
         # Each check removes only its own folder. Another launcher can be in its own check now,
         # and its folder holds the login that check needs.
@@ -295,19 +297,38 @@ verify_image_signature() {
     echo "Error: the signature check failed for $_repository@$_digest, so the launcher will not run it." >&2
     if printf '%s' "$_out" | grep -qiE 'no signatures found|no matching signatures|none of the expected identities'; then
         echo "The image has no signature from DataSQRL's release workflow. Do not run it. Report this to DataSQRL." >&2
-    elif printf '%s' "$_out" | grep -qiE 'sigstore|tuf|rekor|fulcio|dial tcp|no such host|timeout|connection refused'; then
+        echo "cosign said: $(printf '%s\n' "$_out" | grep -v '^WARNING' | tail -1)" >&2
+        return 1
+    fi
+    if printf '%s' "$_out" | grep -qiE 'sigstore|tuf|rekor|fulcio|dial tcp|no such host|timeout|connection refused'; then
         echo "The check needs network access to Sigstore (sigstore.dev) and to ghcr.io. Check the network, then run again." >&2
     fi
     echo "cosign said: $(printf '%s\n' "$_out" | grep -v '^WARNING' | tail -1)" >&2
-    return 1
+    return 2
+}
+
+# Makes sure the pinned cosign image is local before the agent image is pulled. It is about 60MB,
+# so a download problem shows here, with its progress, and stops the launcher before the agent
+# image of about 3GB.
+ensure_cosign_image() {
+    docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1 && return 0
+    echo "Pulling the signature checker (cosign, about 60MB)..." >&2
+    if ! docker pull "$COSIGN_IMAGE" >&2; then
+        echo "" >&2
+        echo "Error: could not pull the signature checker '$COSIGN_IMAGE'." >&2
+        echo "Every pull is checked with it, so the launcher pulls no agent image without it." >&2
+        echo "Check the network access to ghcr.io, then run again." >&2
+        exit 1
+    fi
 }
 
 # Pulls REGISTRY_IMAGE, verifies its signature, tags it as LOCAL_IMAGE and records its ID. Sets
-# CHECKED_IMAGE_ID. A failed pull or check stops the launcher, and a failed check removes the
-# pulled image. It never switches to the other edition, because that would give a pro user the os
-# image.
+# CHECKED_IMAGE_ID. A failed pull or check stops the launcher. An image without a valid signature
+# is removed. After a check that could not decide, the image stays, so the next try needs no new
+# download. Untagged and unrecorded, it cannot run. It never switches to the other edition,
+# because that would give a pro user the os image.
 ensure_image() {
-    local _digest
+    local _digest _signature_check_result
     GHCR_LOGIN_SOURCE=""
     if [ "$RUN_EDITION" = "pro" ]; then
         if [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
@@ -329,6 +350,7 @@ ensure_image() {
             exit 1
         fi
     fi
+    ensure_cosign_image
     echo "Pulling $REGISTRY_IMAGE ($RUN_EDITION edition, ~3GB the first time)..." >&2
     if ! docker pull "$REGISTRY_IMAGE"; then
         echo "" >&2
@@ -355,8 +377,15 @@ ensure_image() {
         docker rmi "$REGISTRY_IMAGE" >/dev/null 2>&1
         exit 1
     fi
-    if ! verify_image_signature "${REGISTRY_IMAGE%:*}" "$_digest"; then
+    verify_image_signature "${REGISTRY_IMAGE%:*}" "$_digest"
+    _signature_check_result=$?
+    if [ "$_signature_check_result" = "1" ]; then
         docker rmi "$REGISTRY_IMAGE" >/dev/null 2>&1
+        exit 1
+    fi
+    if [ "$_signature_check_result" != "0" ]; then
+        echo "The pulled image stays on this machine, so the next try needs no new download." >&2
+        echo "The launcher runs it only after a signature check passes." >&2
         exit 1
     fi
     if ! docker tag "$REGISTRY_IMAGE" "$LOCAL_IMAGE"; then
