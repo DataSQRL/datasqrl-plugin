@@ -40,8 +40,9 @@
 #
 # The image flags work in any directory. --pull-image and --image-exists take no other argument. The edition is os unless
 # DATASQRL_AGENT_EDITION=pro, DATASQRL_PRO_TOKEN is set, or pro-agent:latest is already exist.
-# DATASQRL_PRO_TOKEN is a GitHub token with read:packages; it unlocks the private pro image. Every
-# pro pull needs it, because the signature check after the pull reads the private pro signature.
+# The pro image and its signature are private, so every pro pull needs a ghcr.io login from a
+# GitHub account with pro access: DATASQRL_PRO_TOKEN, a GitHub token with read:packages, or else
+# the ghcr.io login that `docker login ghcr.io` stored.
 #
 # Every pull is checked: cosign verifies that DataSQRL's release workflow on main signed the image,
 # and the launcher runs only an image it verified on this machine. The check needs network access
@@ -159,8 +160,8 @@ image_summary() {
 # the read:packages scope. The token only ever travels on stdin, never as an argument, so `ps`
 # cannot show it, and it is not forwarded into the container. GHCR identifies the account from
 # the token alone, but the login uses the token owner's real username, as GitHub documents it.
-# Sets PRO_LOGIN_USER, which the signature check needs too. Every pro pull logs in again, because
-# the signature check cannot use Docker's stored login.
+# Sets GHCR_LOGIN_USER and GHCR_LOGIN_SECRET, which the signature check needs too. With the token
+# set, every pro pull logs in again, so the token wins over an older stored login.
 pro_login() {
     if ! command -v curl >/dev/null 2>&1; then
         echo "Error: DATASQRL_PRO_TOKEN needs curl on this machine to look up the token's account." >&2
@@ -187,8 +188,48 @@ pro_login() {
         echo "pro edition from DataSQRL." >&2
         exit 1
     fi
-    PRO_LOGIN_USER="$_user"
+    GHCR_LOGIN_USER="$_user"
+    GHCR_LOGIN_SECRET="$DATASQRL_PRO_TOKEN"
     echo "Logged in to ghcr.io as $_user." >&2
+}
+
+# Reads the ghcr.io login that `docker login ghcr.io` stored, in the order Docker uses: the
+# credHelpers entry for ghcr.io, then credsStore, then an inline auths entry. Docker Desktop keeps
+# the login in a credential helper, so the pull can use it, but the cosign container cannot.
+# Sets GHCR_LOGIN_USER and GHCR_LOGIN_SECRET and returns 0, or returns 1 when Docker has no ghcr.io
+# login. The secret stays in this process: it is never a command argument and never printed.
+read_stored_ghcr_login() {
+    local _docker_config_file="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+    local _config_contents _credential_helper _helper_reply _inline_auth _decoded_auth
+    [ -f "$_docker_config_file" ] || return 1
+    # The values read here hold no white space, so the config can be matched as one line.
+    _config_contents="$(tr -d ' \t\r\n' < "$_docker_config_file")"
+    _credential_helper="$(printf '%s' "$_config_contents" | grep -o '"credHelpers":{[^}]*}' \
+        | grep -o '"ghcr.io":"[^"]*"' | head -1 | cut -d'"' -f4)"
+    if [ -z "$_credential_helper" ]; then
+        _credential_helper="$(printf '%s' "$_config_contents" | grep -o '"credsStore":"[^"]*"' \
+            | head -1 | cut -d'"' -f4)"
+    fi
+    if [ -n "$_credential_helper" ]; then
+        # A helper is the program docker-credential-<name> on PATH, so a name is never a path.
+        case "$_credential_helper" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+        command -v "docker-credential-$_credential_helper" >/dev/null 2>&1 || return 1
+        _helper_reply="$(printf 'ghcr.io' | "docker-credential-$_credential_helper" get 2>/dev/null \
+            | tr -d ' \t\r\n')"
+        GHCR_LOGIN_USER="$(printf '%s' "$_helper_reply" | grep -o '"Username":"[^"]*"' | head -1 | cut -d'"' -f4)"
+        GHCR_LOGIN_SECRET="$(printf '%s' "$_helper_reply" | grep -o '"Secret":"[^"]*"' | head -1 | cut -d'"' -f4)"
+    else
+        _inline_auth="$(printf '%s' "$_config_contents" | grep -o '"ghcr.io":{[^}]*}' \
+            | grep -o '"auth":"[^"]*"' | head -1 | cut -d'"' -f4)"
+        [ -n "$_inline_auth" ] || return 1
+        # GNU and current macOS decode with -d. Older macOS knows only -D.
+        _decoded_auth="$(printf '%s' "$_inline_auth" | base64 -d 2>/dev/null)" \
+            || _decoded_auth="$(printf '%s' "$_inline_auth" | base64 -D 2>/dev/null)" \
+            || return 1
+        GHCR_LOGIN_USER="${_decoded_auth%%:*}"
+        GHCR_LOGIN_SECRET="${_decoded_auth#*:}"
+    fi
+    [ -n "$GHCR_LOGIN_USER" ] && [ -n "$GHCR_LOGIN_SECRET" ]
 }
 
 # Exit 0 when this machine verified the signature of the image with ID $1.
@@ -234,7 +275,7 @@ verify_image_signature() {
         (
             umask 077
             printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
-                "$(printf '%s:%s' "$PRO_LOGIN_USER" "$DATASQRL_PRO_TOKEN" | base64 | tr -d '\n')" \
+                "$(printf '%s:%s' "$GHCR_LOGIN_USER" "$GHCR_LOGIN_SECRET" | base64 | tr -d '\n')" \
                 > "$_auth_dir/config.json"
         )
         _cosign_args+=(-v "$_auth_dir:/cosign-auth:ro" -e DOCKER_CONFIG=/cosign-auth)
@@ -267,28 +308,44 @@ verify_image_signature() {
 # image.
 ensure_image() {
     local _digest
+    GHCR_LOGIN_SOURCE=""
     if [ "$RUN_EDITION" = "pro" ]; then
-        if [ -z "${DATASQRL_PRO_TOKEN:-}" ]; then
-            echo "Error: the pro image and its signature are private, so every pro pull needs a token." >&2
-            echo "Set DATASQRL_PRO_TOKEN to the token DataSQRL gave you." >&2
+        if [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
+            pro_login
+            GHCR_LOGIN_SOURCE="token"
+        elif read_stored_ghcr_login; then
+            GHCR_LOGIN_SOURCE="stored"
+            echo "Using the ghcr.io login that Docker stored for $GHCR_LOGIN_USER." >&2
+        else
+            echo "Error: the pro image and its signature are private, so a pro pull needs a ghcr.io login." >&2
             echo "" >&2
-            echo "If DataSQRL has given your own GitHub account access to the pro edition, you can use" >&2
-            echo "a personal access token (classic) from that account with the 'read:packages' scope" >&2
-            echo "instead. Set it in the shell that starts your coding agent, for example in ~/.zshrc." >&2
+            echo "If DataSQRL has given your own GitHub account access to the pro edition, log Docker in" >&2
+            echo "once with that account and a personal access token (classic) with the 'read:packages' scope:" >&2
+            echo "  docker login ghcr.io" >&2
+            echo "" >&2
+            echo "Or set DATASQRL_PRO_TOKEN to the token DataSQRL gave you. Set it in the shell that starts" >&2
+            echo "your coding agent, for example in ~/.zshrc." >&2
             echo "To run the open-source edition instead, set DATASQRL_AGENT_EDITION=os." >&2
             exit 1
         fi
-        pro_login
     fi
     echo "Pulling $REGISTRY_IMAGE ($RUN_EDITION edition, ~3GB the first time)..." >&2
     if ! docker pull "$REGISTRY_IMAGE"; then
         echo "" >&2
         echo "Error: could not pull '$REGISTRY_IMAGE'." >&2
-        if [ "$RUN_EDITION" = "pro" ]; then
+        if [ "$GHCR_LOGIN_SOURCE" = "token" ]; then
             echo "" >&2
             echo "The login worked, so the token's GitHub account most likely has not been given access" >&2
             echo "to the pro edition by DataSQRL. Ask DataSQRL to grant it, or set DATASQRL_AGENT_EDITION=os" >&2
             echo "to run the open-source edition." >&2
+        elif [ "$GHCR_LOGIN_SOURCE" = "stored" ]; then
+            echo "" >&2
+            echo "ghcr.io refused the pull for $GHCR_LOGIN_USER, the account of the login that Docker stored." >&2
+            echo "The stored login can be expired, or DataSQRL has not given this account access to the pro" >&2
+            echo "edition. Log in again with a token that has the 'read:packages' scope:" >&2
+            echo "  docker login ghcr.io" >&2
+            echo "If that does not help, ask DataSQRL for access, or set DATASQRL_AGENT_EDITION=os to run the" >&2
+            echo "open-source edition." >&2
         fi
         exit 1
     fi

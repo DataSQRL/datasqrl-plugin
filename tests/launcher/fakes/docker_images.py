@@ -12,6 +12,8 @@ FAKE_COSIGN_WAIT set, it writes FAKE_DOCKER_DIR/cosign_started and waits that ma
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import stat
 import subprocess
@@ -88,7 +90,26 @@ else
 fi
 """
 
+# A Docker credential helper. It answers `get` for ghcr.io with the login in
+# FAKE_DOCKER_DIR/stored_login (two lines: the username and the secret), the way
+# docker-credential-desktop and docker-credential-osxkeychain do, and fails for any other server.
+CREDENTIAL_HELPER_SHIM = r"""#!/bin/sh
+D="$FAKE_DOCKER_DIR"
+server="$(cat)"
+printf '%s %s\n' "$1" "$server" >> "$D/credential_helper_calls"
+if [ "$1" = "get" ] && [ "$server" = "ghcr.io" ] && [ -f "$D/stored_login" ]; then
+  printf '{"ServerURL":"ghcr.io","Username":"%s","Secret":"%s"}\n' \
+    "$(sed -n 1p "$D/stored_login")" "$(sed -n 2p "$D/stored_login")"
+  exit 0
+fi
+echo "credentials not found in native keychain"
+exit 1
+"""
+
 GOOD_TOKEN = "ghp_goodtoken123"
+
+STORED_LOGIN_USER = "team-member"
+STORED_LOGIN_SECRET = "ghp_storedsecret456"
 
 OS_REGISTRY = "ghcr.io/datasqrl/adv-agent:latest"
 PRO_REGISTRY = "ghcr.io/datasqrl/pro-agent:latest"
@@ -108,6 +129,9 @@ def project(tmp_path: Path):
     curl = shim_dir / "curl"
     curl.write_text(CURL_SHIM)
     curl.chmod(curl.stat().st_mode | stat.S_IEXEC)
+    credential_helper = shim_dir / "docker-credential-fakestore"
+    credential_helper.write_text(CREDENTIAL_HELPER_SHIM)
+    credential_helper.chmod(credential_helper.stat().st_mode | stat.S_IEXEC)
     fake = tmp_path / "fake-docker"
     (fake / "registry").mkdir(parents=True)
     (fake / "images").mkdir()
@@ -117,7 +141,8 @@ def project(tmp_path: Path):
     home.mkdir()
     env = {
         k: v for k, v in os.environ.items()
-        if k not in ("DATASQRL_AGENT_EDITION", "DATASQRL_AGENT_IMAGE", "DATASQRL_PRO_TOKEN")
+        if k not in ("DATASQRL_AGENT_EDITION", "DATASQRL_AGENT_IMAGE", "DATASQRL_PRO_TOKEN",
+                     "DOCKER_CONFIG")
     }
     env.update({
         "PATH": f"{shim_dir}:{os.environ['PATH']}",
@@ -136,6 +161,28 @@ def project(tmp_path: Path):
 def state_dir(fake: Path) -> Path:
     """XDG_STATE_HOME for the launcher under test."""
     return fake.parent / "state"
+
+
+def store_ghcr_login(fake: Path, storage: str, user: str = STORED_LOGIN_USER,
+                     secret: str = STORED_LOGIN_SECRET, docker_config_dir: Path | None = None) -> None:
+    """Writes the ghcr.io login that `docker login ghcr.io` leaves behind.
+
+    `storage` is where Docker keeps it: "credential_helper" (a credHelpers entry for ghcr.io),
+    "credential_store" (credsStore, the Docker Desktop default) or "inline" (base64 in auths).
+    The config goes to ~/.docker of the test HOME, or to `docker_config_dir` for DOCKER_CONFIG.
+    """
+    config_dir = docker_config_dir or fake.parent / "home" / ".docker"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    if storage == "inline":
+        inline_auth = base64.b64encode(f"{user}:{secret}".encode()).decode()
+        config = {"auths": {"ghcr.io": {"auth": inline_auth}}}
+    else:
+        (fake / "stored_login").write_text(f"{user}\n{secret}\n")
+        if storage == "credential_helper":
+            config = {"auths": {}, "credHelpers": {"ghcr.io": "fakestore"}}
+        else:
+            config = {"auths": {"ghcr.io": {}}, "credsStore": "fakestore", "currentContext": "desktop-linux"}
+    (config_dir / "config.json").write_text(json.dumps(config, indent="\t"))
 
 
 def verified_images_file(fake: Path) -> Path:
