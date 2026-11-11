@@ -5,7 +5,8 @@ Each image is a file under FAKE_DOCKER_DIR: `registry/` holds what `docker pull`
 label, its repo digests and its image ID, so `docker tag` copies them and `docker image inspect -f`
 reads them back.
 
-A `docker run` of the cosign image is the signature check. It passes when the checked digest is
+A `docker pull` fails with FAKE_PULL_ERROR when that is set, as when ghcr.io refuses the login
+that Docker sent. A `docker run` of the cosign image is the signature check. It passes when the checked digest is
 listed in FAKE_DOCKER_DIR/signed, and it fails with FAKE_COSIGN_ERROR when that is set. With
 FAKE_COSIGN_WAIT set, it writes FAKE_DOCKER_DIR/cosign_started and waits that many seconds first.
 """
@@ -45,7 +46,9 @@ case "$1" in
     exit 0 ;;
   pull)
     f="$D/registry/$(key "$2")"
+    if [ -n "${FAKE_PULL_ERROR:-}" ]; then echo "$FAKE_PULL_ERROR" >&2; exit 1; fi
     if [ ! -f "$f" ]; then echo "Error response from daemon: denied" >&2; exit 1; fi
+    echo "Status: Downloaded newer image for $2"
     cp "$f" "$D/images/$(key "$2")"; exit 0 ;;
   tag)
     cp "$D/images/$(key "$2")" "$D/images/$(key "$3")"; exit $? ;;
@@ -80,9 +83,16 @@ esac
 
 # Answers GET https://api.github.com/user the way GitHub does: the body, then the HTTP status on
 # its own line (the launcher asks for it with -w). The token arrives as a header on stdin.
+# Answers GET https://ghcr.io/token the way ghcr.io does: the HTTP status alone, 200 for the login
+# in FAKE_GHCR_ACCEPTED_LOGIN and 403 for any other. The login arrives as a curl config on stdin.
 CURL_SHIM = r"""#!/bin/sh
 D="$FAKE_DOCKER_DIR"
 printf '%s\n' "$*" >> "$D/curl_calls"
+case "$*" in
+  *https://ghcr.io/token*)
+    if [ "$(cat)" = "user = \"$FAKE_GHCR_ACCEPTED_LOGIN\"" ]; then printf '200'; else printf '403'; fi
+    exit 0 ;;
+esac
 hdr="$(cat)"
 if [ "$hdr" = "Authorization: Bearer $FAKE_LOOKUP_TOKEN" ]; then
   printf '{\n  "login": "datasqrl-agent-bot",\n  "id": 1\n}\n200'
@@ -159,6 +169,8 @@ def project(tmp_path: Path):
         # GitHub knows the good token, and ghcr.io accepts it.
         "FAKE_LOOKUP_TOKEN": GOOD_TOKEN,
         "FAKE_GOOD_TOKEN": GOOD_TOKEN,
+        # ghcr.io accepts the stored login, so it is not expired.
+        "FAKE_GHCR_ACCEPTED_LOGIN": f"{STORED_LOGIN_USER}:{STORED_LOGIN_SECRET}",
     })
     return proj, fake, env
 

@@ -19,6 +19,7 @@ from tests.launcher.fakes.docker_images import (  # noqa: F401
     run_launch,
     ran_image,
     pulls,
+    all_pulls,
     calls,
     state_dir,
     store_ghcr_login,
@@ -124,7 +125,8 @@ class TestStoredGhcrLogin:
         assert r.returncode == 0, r.stderr
         assert pulls(fake) == [PRO_REGISTRY]
         assert "login " not in calls(fake)
-        assert calls(fake, "curl_calls") == ""
+        assert "https://api.github.com/user" not in calls(fake, "curl_calls")
+        assert "https://ghcr.io/token?scope=repository:sigstore/cosign/cosign:pull" in calls(fake, "curl_calls")
         assert cosign_login(fake) == f"{STORED_LOGIN_USER}:{STORED_LOGIN_SECRET}"
         assert f"Using the ghcr.io login that Docker stored for {STORED_LOGIN_USER}." in r.stderr
         assert ran_image(fake) == "pro-agent:latest"
@@ -138,6 +140,7 @@ class TestStoredGhcrLogin:
         assert r.returncode == 0, r.stderr
         assert STORED_LOGIN_SECRET not in calls(fake)
         assert STORED_LOGIN_SECRET not in calls(fake, "run_args")
+        assert STORED_LOGIN_SECRET not in calls(fake, "curl_calls")
         assert STORED_LOGIN_SECRET not in r.stdout + r.stderr
 
     def test_the_credential_helper_is_asked_only_for_ghcr(self, project):
@@ -225,3 +228,25 @@ class TestStoredGhcrLogin:
         assert r.returncode == 1
         assert f"ghcr.io refused the pull for {STORED_LOGIN_USER}" in r.stderr
         assert "docker login ghcr.io" in r.stderr
+
+    def test_an_expired_stored_login_stops_before_any_pull(self, project):
+        """ghcr.io refuses an expired login also for the public cosign image, so no pull can work."""
+        proj, fake, env = project
+        publish(fake, PRO_REGISTRY, "pro")
+        store_ghcr_login(fake, "credential_store")
+        r = run_launch(proj, env, DATASQRL_AGENT_EDITION="pro", FAKE_GHCR_ACCEPTED_LOGIN="")
+        assert r.returncode == 1
+        assert all_pulls(fake) == []
+        assert f"ghcr.io refused the ghcr.io login that Docker stored for {STORED_LOGIN_USER}" in r.stderr
+        assert "docker login ghcr.io" in r.stderr
+        assert "Check the network" not in r.stderr
+        assert ran_image(fake) is None
+
+    def test_a_stored_login_with_a_quote_reaches_ghcr_intact(self, project):
+        proj, fake, env = project
+        publish(fake, PRO_REGISTRY, "pro")
+        secret_with_quote = 'ghp_with"quote'
+        store_ghcr_login(fake, "inline", secret=secret_with_quote)
+        r = run_launch(proj, env, DATASQRL_AGENT_EDITION="pro",
+                       FAKE_GHCR_ACCEPTED_LOGIN=f'{STORED_LOGIN_USER}:ghp_with\\"quote')
+        assert r.returncode == 0, r.stderr

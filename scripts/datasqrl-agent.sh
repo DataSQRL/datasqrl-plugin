@@ -232,6 +232,26 @@ read_stored_ghcr_login() {
     [ -n "$GHCR_LOGIN_USER" ] && [ -n "$GHCR_LOGIN_SECRET" ]
 }
 
+# Exit 0 when ghcr.io refuses the stored login in GHCR_LOGIN_USER and GHCR_LOGIN_SECRET. It asks
+# ghcr.io for a pull token for the public cosign repository: every valid login gets one, so a
+# refusal means that the login itself is expired or revoked, not that pro access is missing.
+# Without curl, or with any other answer, it returns 1 and the pull shows the problem. The secret
+# goes to curl on stdin as a config line, so `ps` cannot show it.
+ghcr_refuses_stored_login() {
+    local _cosign_repository _escaped_login _http_code
+    command -v curl >/dev/null 2>&1 || return 1
+    _cosign_repository="${COSIGN_IMAGE%%@*}"
+    _cosign_repository="${_cosign_repository%:*}"
+    _cosign_repository="${_cosign_repository#ghcr.io/}"
+    _escaped_login="$GHCR_LOGIN_USER:$GHCR_LOGIN_SECRET"
+    _escaped_login="${_escaped_login//\\/\\\\}"
+    _escaped_login="${_escaped_login//\"/\\\"}"
+    _http_code="$(printf 'user = "%s"\n' "$_escaped_login" \
+        | curl -s -o /dev/null -w '%{http_code}' -K - \
+            "https://ghcr.io/token?scope=repository:${_cosign_repository}:pull&service=ghcr.io" 2>/dev/null)"
+    [ "$_http_code" = "401" ] || [ "$_http_code" = "403" ]
+}
+
 # Exit 0 when this machine verified the signature of the image with ID $1.
 is_verified_image() {
     [ -n "$1" ] && [ -f "$VERIFIED_IMAGES_FILE" ] && grep -qxF "$1" "$VERIFIED_IMAGES_FILE"
@@ -307,17 +327,42 @@ verify_image_signature() {
     return 2
 }
 
+# Exit 0 when the `docker pull` errors in $1 show that ghcr.io refused the login that Docker sent.
+# Docker sends a stored ghcr.io login with every ghcr.io pull, also for a public image, and
+# ghcr.io refuses the pull when that login is expired. It does not fall back to an anonymous pull.
+pull_errors_show_refused_login() {
+    printf '%s' "$1" | grep -qiE 'denied|unauthorized'
+}
+
+# Tells the user how to fix a ghcr.io login that ghcr.io refused.
+print_refused_ghcr_login_advice() {
+    echo "" >&2
+    echo "ghcr.io refused the ghcr.io login that Docker sent with the pull. Docker sends a stored" >&2
+    echo "login also for a public image, so an expired login stops every ghcr.io pull." >&2
+    echo "Log in again with a personal access token (classic) that has the 'read:packages' scope:" >&2
+    echo "  docker login ghcr.io" >&2
+    echo "For the open-source edition only, you can remove the login instead:" >&2
+    echo "  docker logout ghcr.io" >&2
+}
+
 # Makes sure the pinned cosign image is local before the agent image is pulled. It is about 60MB,
 # so a download problem shows here, with its progress, and stops the launcher before the agent
 # image of about 3GB.
 ensure_cosign_image() {
+    local _pull_errors
     docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1 && return 0
     echo "Pulling the signature checker (cosign, about 60MB)..." >&2
-    if ! docker pull "$COSIGN_IMAGE" >&2; then
+    # The progress goes to the terminal. The errors are kept, so the advice can match the cause.
+    if ! { _pull_errors="$(docker pull "$COSIGN_IMAGE" 2>&1 1>&3)"; } 3>&2; then
+        printf '%s\n' "$_pull_errors" >&2
         echo "" >&2
         echo "Error: could not pull the signature checker '$COSIGN_IMAGE'." >&2
         echo "Every pull is checked with it, so the launcher pulls no agent image without it." >&2
-        echo "Check the network access to ghcr.io, then run again." >&2
+        if pull_errors_show_refused_login "$_pull_errors"; then
+            print_refused_ghcr_login_advice
+        else
+            echo "Check the network access to ghcr.io, then run again." >&2
+        fi
         exit 1
     fi
 }
@@ -328,7 +373,7 @@ ensure_cosign_image() {
 # download. Untagged and unrecorded, it cannot run. It never switches to the other edition,
 # because that would give a pro user the os image.
 ensure_image() {
-    local _digest _signature_check_result
+    local _digest _signature_check_result _pull_errors
     GHCR_LOGIN_SOURCE=""
     if [ "$RUN_EDITION" = "pro" ]; then
         if [ -n "${DATASQRL_PRO_TOKEN:-}" ]; then
@@ -336,6 +381,14 @@ ensure_image() {
             GHCR_LOGIN_SOURCE="token"
         elif read_stored_ghcr_login; then
             GHCR_LOGIN_SOURCE="stored"
+            if ghcr_refuses_stored_login; then
+                echo "Error: ghcr.io refused the ghcr.io login that Docker stored for $GHCR_LOGIN_USER." >&2
+                echo "The login is expired, or its token was revoked." >&2
+                echo "Log in again with a personal access token (classic) that has the 'read:packages' scope:" >&2
+                echo "  docker login ghcr.io" >&2
+                echo "Or set DATASQRL_PRO_TOKEN to the token DataSQRL gave you." >&2
+                exit 1
+            fi
             echo "Using the ghcr.io login that Docker stored for $GHCR_LOGIN_USER." >&2
         else
             echo "Error: the pro image and its signature are private, so a pro pull needs a ghcr.io login." >&2
@@ -352,9 +405,14 @@ ensure_image() {
     fi
     ensure_cosign_image
     echo "Pulling $REGISTRY_IMAGE ($RUN_EDITION edition, ~3GB the first time)..." >&2
-    if ! docker pull "$REGISTRY_IMAGE"; then
+    # The progress stays on stdout. The errors are kept, so the advice can match the cause.
+    if ! { _pull_errors="$(docker pull "$REGISTRY_IMAGE" 2>&1 1>&3)"; } 3>&1; then
+        printf '%s\n' "$_pull_errors" >&2
         echo "" >&2
         echo "Error: could not pull '$REGISTRY_IMAGE'." >&2
+        if [ -z "$GHCR_LOGIN_SOURCE" ] && pull_errors_show_refused_login "$_pull_errors"; then
+            print_refused_ghcr_login_advice
+        fi
         if [ "$GHCR_LOGIN_SOURCE" = "token" ]; then
             echo "" >&2
             echo "The login worked, so the token's GitHub account most likely has not been given access" >&2

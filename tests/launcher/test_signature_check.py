@@ -202,6 +202,45 @@ class TestCosignImage:
         assert "could not pull the signature checker" in r.stderr
         assert ran_image(fake) is None
 
+    def test_a_refused_login_on_the_cosign_pull_names_the_login(self, project):
+        proj, fake, env = project
+        publish(fake, OS_REGISTRY, "os")
+        r = run_launch(proj, env, FAKE_PULL_ERROR="Error response from daemon: Head \"https://ghcr.io/v2/"
+                                                 "sigstore/cosign/cosign/manifests/v3.1.4\": denied: denied")
+        assert r.returncode == 1
+        assert all_pulls(fake) == [COSIGN_IMAGE]
+        assert "denied: denied" in r.stderr
+        assert "ghcr.io refused the ghcr.io login that Docker sent" in r.stderr
+        assert "docker login ghcr.io" in r.stderr
+        assert "Check the network" not in r.stderr
+
+    def test_a_network_error_on_the_cosign_pull_names_the_network(self, project):
+        proj, fake, env = project
+        publish(fake, OS_REGISTRY, "os")
+        r = run_launch(proj, env, FAKE_PULL_ERROR="Error response from daemon: dial tcp: lookup ghcr.io: no such host")
+        assert r.returncode == 1
+        assert "Check the network access to ghcr.io" in r.stderr
+        assert "refused the ghcr.io login" not in r.stderr
+
+    def test_a_refused_login_on_the_os_pull_names_the_login(self, project):
+        proj, fake, env = project
+        publish(fake, OS_REGISTRY, "os")
+        have_cosign_local(fake)
+        r = run_launch(proj, env, FAKE_PULL_ERROR="Error response from daemon: denied: denied")
+        assert r.returncode == 1
+        assert f"could not pull '{OS_REGISTRY}'" in r.stderr
+        assert "ghcr.io refused the ghcr.io login that Docker sent" in r.stderr
+        assert "docker logout ghcr.io" in r.stderr
+
+    def test_pull_progress_goes_to_the_terminal(self, project):
+        """The cosign progress goes to stderr. The agent progress stays on stdout, as before."""
+        proj, fake, env = project
+        publish(fake, OS_REGISTRY, "os")
+        r = run_flag(proj, env, "--pull-image")
+        assert r.returncode == 0, r.stderr
+        assert f"Downloaded newer image for {COSIGN_IMAGE}" in r.stderr
+        assert f"Downloaded newer image for {OS_REGISTRY}" in r.stdout
+
     def test_a_pro_pull_without_a_login_pulls_no_cosign_image(self, project):
         proj, fake, env = project
         publish(fake, PRO_REGISTRY, "pro")
