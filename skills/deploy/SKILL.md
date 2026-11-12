@@ -15,9 +15,8 @@ CLOUD="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-cloud.sh"
 [ -f "$CLOUD" ] || CLOUD=datasqrl-cloud.sh   # fall back to PATH
 ```
 
-**Talk to the DataSQRL Cloud API only through the script.** It carries the token, keeps it fresh,
-and offers exactly the operations that are allowed — which is what a hand-written `curl` call
-would lose.
+**Deploy through the script, never with `curl` yourself.** It carries the token, keeps it fresh,
+and runs the commit checks below, which a hand-written call or a bare MCP tool call would skip.
 
 The script needs `curl` and `jq`. If `jq` is missing the script says so and prints the install line —
 relay it and stop.
@@ -226,9 +225,7 @@ bash "$CLOUD" logs --project <id> --deployment <deploymentId>    # logs
 
 ---
 
-# What this skill cannot do
-
-Stop and say where it happens. Do not look for another way round.
+# What this skill does not do
 
 A new deployment does **not** become the project's main one, and this skill does not make it one.
 If the user wants that, tell them the `promote` skill does it and stop — a separate request they
@@ -238,9 +235,6 @@ and do not go read that skill to find out how.
 | Request                                       | Where it happens                                   |
 | --------------------------------------------- | -------------------------------------------------- |
 | Make a deployment the project's main one      | the `promote` skill — tell the user, do not do it  |
-| Terminate, stop, start or resize a deployment | Web UI — deployment page                           |
-| Upgrade a deployment in place                 | Web UI (and only on installations that support it) |
-| Create, edit or delete a project              | Web UI — Add Project / project settings            |
-| Manage members, secrets or alert routing      | Web UI                                             |
+| Terminate, stop, start or resize a deployment, manage projects, members, secrets or alerts | the `cloud` skill, a separate request |
 | Diagnose a failing or unhealthy pipeline      | Web UI — **Troubleshoot**; that agent has the playbooks, this one does not |
 | Deploy uncommitted or unpushed code           | Not possible — deploy a pushed commit, or push it  |

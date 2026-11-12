@@ -1,7 +1,7 @@
 {
   "name": "datasqrl",
   "displayName": "DataSQRL",
-  "version": "0.3.7",
+  "version": "0.4.0",
   "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
   "author": {
     "name": "DataSQRL",
@@ -18,5 +18,12 @@
     "streaming",
     "flink",
     "graphql"
-  ]
+  ],
+  "mcpServers": {
+    "datasqrl": {
+      "type": "http",
+      "url": "${DATASQRL_BASE_URL:-https://cloud.datasqrl.com}/api/mcp",
+      "headersHelper": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-cloud.sh\" mcp-headers"
+    }
+  }
 }

@@ -19,8 +19,8 @@ CLOUD="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-cloud.sh"
 [ -f "$CLOUD" ] || CLOUD=datasqrl-cloud.sh   # fall back to PATH
 ```
 
-**Never call the DataSQRL Cloud API with `curl` yourself.** The script holds the token, refreshes
-it, and implements only the operations that are allowed.
+**Promote through the script, never with `curl` or a bare MCP tool call.** The script holds the
+token, refreshes it, and the steps below show the user what gets replaced before it changes.
 
 It needs `curl` and `jq`. If `jq` is missing the script says so and prints the install line —
 relay it and stop.
@@ -89,11 +89,9 @@ than the id, so they can confirm it is now main.
 A promotion is not reversible by this skill — undoing it means promoting the previous deployment
 back, which is another run of this same skill and needs the same confirmation.
 
-# What this skill cannot do
+# What this skill does not do
 
 | Request                                      | Where it happens                                    |
 | -------------------------------------------- | --------------------------------------------------- |
 | Create a deployment                          | the `deploy` skill                                  |
-| Terminate, stop, start or resize             | Web UI — deployment page                            |
-| Upgrade a deployment in place                | Web UI (and only on installations that support it)  |
-| Change the project's own settings or members  | Web UI                                              |
+| Terminate, stop, start or resize, change project settings or members | the `cloud` skill, a separate request |

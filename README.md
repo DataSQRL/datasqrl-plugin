@@ -29,12 +29,29 @@ the test runner and the reviewing judges.
 | `progress` | `/datasqrl:progress` | Everything about the current run: is it still going, what its progress output means, whether it is stuck; stops it on request. |
 | `deploy` | `/datasqrl:deploy` | Deploys a committed and pushed project to DataSQRL Cloud, waits for it, reports the result. Also reads deployment status and logs. |
 | `promote` | `/datasqrl:promote` | Makes an existing deployment the project's main one, after showing you which one it replaces. |
+| `cloud` | `/datasqrl:cloud` | Everything else in DataSQRL Cloud — alerts, metrics, logs, projects, secrets, members, terminating or resizing a deployment — through the DataSQRL Cloud MCP tools. |
 
 `deploy` is a separate step you ask for, not the tail of an implementation run. It deploys a
 commit from GitHub rather than your working tree, so the work has to be committed and pushed
-first, and signing in needs you to approve a browser prompt once per session. Terminating,
-stopping, resizing and upgrading deployments, and managing projects, members and secrets, are
-Web UI tasks — neither skill can do them.
+first, and signing in needs you to approve a browser prompt once per session.
+
+### DataSQRL Cloud tools (MCP)
+
+The plugin connects your agent to the DataSQRL Cloud MCP server, which serves every operation of
+the DataSQRL Cloud API as a tool. New operations show up without a plugin update. Sign in once
+(`deploy` or `cloud` asks you to), and the tools keep working as the token refreshes.
+
+Tools that change or delete something are marked destructive. The `cloud` skill runs one only when
+you named the action and its target, and otherwise asks you first. Whether your agent also prompts
+depends on its permission settings: Claude Code in auto mode, for one, runs a tool you asked for
+without a prompt. Set `DATASQRL_BASE_URL` to point the plugin at another DataSQRL Cloud host.
+
+| Agent | How it connects |
+|-------|-----------------|
+| Claude Code | Direct HTTP; a header helper adds a fresh token on each connection |
+| Codex | A local bridge (`datasqrl-cloud.sh mcp-bridge`) adds a fresh token to each request |
+| Cursor | The same bridge. Not yet tested on Cursor; report problems as issues. |
+| GitHub Copilot | Not connected; use the Web UI for what `deploy` and `promote` do not cover |
 
 `promote` is deliberately separate from `deploy`, and never chained onto it. Deploying adds a new
 deployment and changes nothing about which one is main; promoting changes what the project serves.

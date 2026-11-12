@@ -1,6 +1,6 @@
 {
   "name": "datasqrl",
-  "version": "0.3.7",
+  "version": "0.4.0",
   "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
   "author": {
     "name": "DataSQRL",
@@ -36,5 +36,6 @@
       "Plan a DataSQRL pipeline from my requirements document.",
       "Is my DataSQRL run still going?"
     ]
-  }
+  },
+  "mcpServers": "./mcp.json"
 }
