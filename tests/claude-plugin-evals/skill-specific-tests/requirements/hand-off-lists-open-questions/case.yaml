@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: requirements-hand-off-lists-open-questions
+description: The user has no more facts. The requirements skill writes the file, lists the open questions with a selected default for each, and waits.
+tags: [requirements]
+context:
+  scaffold_script: fixture.sh

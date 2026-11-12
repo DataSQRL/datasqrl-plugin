@@ -2,6 +2,9 @@
 __pycache__/
 .pytest_cache/
 
+# Written when the Claude plugin evals in tests/claude-plugin-evals/ run.
+tests/claude-plugin-evals/**/results/
+
 # IDE files.
 *.iml
 .idea/
