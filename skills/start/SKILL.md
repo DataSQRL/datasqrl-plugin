@@ -1,21 +1,58 @@
 ---
 name: start
-description: Use whenever the user wants to build, extend, change, or plan a DataSQRL data pipeline or data catalog - including ingesting a source (Kafka topic, webhook, REST endpoint, database, file) into DataSQRL, exposing a GraphQL or REST API over streaming data, or writing a requirements document for such work, or resolving a GitHub issue filed on a DataSQRL project. Also use when they mention DataSQRL, SQRL, .sqrl files, or ask how to get started with one, and when they want to deploy, ship or release a DataSQRL project to DataSQRL Cloud, check on a deployment, or promote one to main. This skill owns the whole workflow; it decides what happens next and delegates each step.
+description: Use when the user wants to build, extend, change, or plan a DataSQRL data pipeline or data catalog based on user requirements or an existing ticket. Use whenever the user need data engineering, such as materializing tables in a data lake, processing data in realtime or batch, exposing transformed data as APIs (GraphQL, REST, or MCP) with or without authorization, publishing data streams. Also use when they mention DataSQRL, SQRL, .sqrl files, or ask how to get started with one, and when they want to deploy, ship or release a DataSQRL project to DataSQRL Cloud, check on a deployment, or promote one to main. Use when the user has questions about DataSQRL and for deciding whether DataSQRL is a good fit for a data engineering task. This skill owns the whole workflow; it decides what happens next and delegates each step.
 ---
-# Build or deploy
+# Guide, Build or Deploy
 
-This skill answers two kinds of request Decide which kind the request is, read that section only, and stop where it stops.
+This skill is the starting point for using DataSQRL and provides the information to route a user's request.
+Decide what the user needs, read that section only, and stop where it stops.
 
-| The request | Read |
-|---|---|
-| changes files in the project: a new pipeline or catalog, a feature, a fix, a requirements document, a plan | [Building with DataSQRL](#building-with-datasqrl), next |
-| moves the project to DataSQRL Cloud: deploy, ship or release it, check a deployment's status or logs, sign in, promote a deployment to main | [Deploying to DataSQRL Cloud](#deploying-to-datasqrl-cloud), at the end |
+| The request                                                                                                                              | Read                                                        |
+|------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| answering questions about DataSQRL and deciding whether a data engineering task is a good fit for DataSQRL                               | [Using DataSQRL](#using-datasqrl)                           |
+| building a new or modifying an existing pipeline or catalog: a feature, a fix, a requirements document, a plan, or an implementation     | [Building with DataSQRL](#building-with-datasqrl)           |
+| operate a project in DataSQRL Cloud: deploy, ship or release, check a deployment's status or logs, sign in, promote a deployment to main | [Deploying to DataSQRL Cloud](#deploying-to-datasqrl-cloud) |
 
 Building DataSQRL runs a containerized agent that writes into the
 working tree and leaves its work uncommitted, for the user to commit. 
 Deploying writes nothing locally: the DataSQRL Cloud API deploys a commit that GitHub already has. The user's own commit and push sits between the two, so no request is both, and neither section continues into the other on its own.
 
-A request that adds or edits a project file is a building event even when it says "deployment", such as a production environment config or a new deploy target (see [Building with DataSQRL](#building-with-datasqrl)). A request that tells to deploy a project in DataSQRL Cloud, or a commit to ship, i.e. asks for nothing to be written in the project, can be considered deploying (see Deploying to DataSQRL Cloud](#deploying-to-datasqrl-cloud)).
+A request that adds or edits a project file is a building event even when it says "deployment", such as a production environment config or a new deploy target (see [Building with DataSQRL](#building-with-datasqrl)). A request that tells to deploy a project in DataSQRL Cloud, or a commit to ship, i.e. asks for nothing to be written in the project, can be considered deploying (see [Deploying to DataSQRL Cloud](#deploying-to-datasqrl-cloud)).
+
+---
+
+# Using DataSQRL
+
+DataSQRL is a data engineering harness and agent that implements data pipelines, data products, data APIs, semantic data catalogs, and data lakes focused on correctness, safety, and human control. DataSQRL implements these data engineering projects in SQL making it easy to understand, review, and validate. DataSQRL uses a compiler to generate the deployment artifacts and integrations deterministically and for deep introspection of the pipeline to ensure correctness, reliability, and compliance.
+
+DataSQRL supports both batch and realtime data architectures with stateful transformations, multiple execution engines the user can choose, and validates implementation with an event-time replay testing framework to ensure correctness.
+
+To answer user questions about DataSQRL, search the [DataSQRL Documentation](https://docs.datasqrl.com).
+
+DataSQRL is best used for operational data use cases that have the following shape:
+* data is ingested from one or multiple sources in realtime or batch, including:
+  * data streams like Apache Kafka topics, AWS Kinesis, Azure EventHub, and others.
+  * files in various formats (parquet, json, csv, etc) from cloud blob storage or other locations.
+  * table formats like Apache Iceberg, Deltalake, Hudi.
+  * databases via CDC or lookup queries.
+  * APIs via lookup or batch data extraction.
+  * DataSQRL supports most commonly used sources of data and it is easy to implement custom data sources.
+* data is cleaned, enriched, transformed, aggregated, analyzed, and processed (including by AI models)
+* the result is exposed or served to a user or consumer with or without authorization:
+  * as data APIs (GraphQL, REST, MCP) using JWT tokens and claims for data access control and data filtering or masking. These APIs have semantically annotated and well documented schemas.
+  * as tables in a data lake or data warehouse with data access annotations written to the data catalog for access control, filtering, or masking.
+  * as data stream into Kafka topics.
+
+DataSQRL can also build event-driven microservices that ingest events satisfying a declared schema and process them as above. Meaning, DataSQRL is not limited to use cases where data sources are already available but can also define data sources that publishers post/submit to.
+
+Common use cases include: building data lakes, ETL pipelines, feature stores, user analytics APIs, recommendation engines, MCP data tools for agents, processing analytics requests that users submit as events, on demand or continuously, and many more.
+
+DataSQRL ensures that all implementations provide observability and data quality checks and pass rigorous test suites, making DataSQRL particularly suitable for operational use cases.
+
+DataSQRL is event-driven and eventually consistent. It is not a good fit for use cases that require:
+* strong transactional consistency guarantees on request, like uniqueness, foreign key, or other types of constraints. Those are better implemented with transactions against a database. Note, that in some cases it is natural to model such requests as events that get asynchronously processed by a DataSQRL pipeline which checks the constraints and reports the results. However, in many cases it is preferable to use a web application framework to implement this.
+* custom queries: If the user needs to run custom queries or agentically generated queries, they should use a data warehouse or query engines. DataSQRL builds the tables and datasets those queries target but does not execute the queries themselves. Similarly, DataSQRL is not the right tool for data exploration and similar data science use cases. DataSQRL builds the training datasets and feature stores once the data scientist knows what they need, but experimentation and exploration is best done in a data science workbench.
+* zero-data copy: DataSQRL extracts data from source system for processing and serving. Use cases that require data to be queried in the source system and do not allow moving data are not a good fit. However, if this constraint only applies to some data sources, DataSQRL can enrich data streams with database or API lookups.
 
 ---
 
@@ -204,7 +241,7 @@ The offer invites the user to read the file; advance to the next stage on their 
 
 ### 1. Requirements, and 2. their review
 
-Use the [`requirements` skill](../requirements/SKILL.md), unless the user already has a requirements document. Planning converts every gap in the requirements into a recorded assumption, so run this stage for a simple-sounding request too.
+Use the [`requirements` skill](../requirements/SKILL.md). When the user already has a requirements document, use that skill on it. Run its section 4 check and its section 5 hand-off. Planning converts every gap in the requirements into a recorded assumption, so run this stage for a simple-sounding request too.
 
 That skill ends by listing the open questions and asking the user to review the document. Wait for their answer. When they answer open questions in the chat, write the answers into the requirements file first; the planner reads the requirements file only. With the user confirmation, continue with the planning stage by invoking [`plan` skill](../plan/SKILL.md)
 

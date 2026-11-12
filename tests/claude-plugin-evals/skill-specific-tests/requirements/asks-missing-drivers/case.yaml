@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: requirements-asks-missing-drivers
+description: The notes give the sources, results and freshness. The requirements skill asks about the drivers that the notes leave out.
+tags: [requirements]
+context:
+  scaffold_script: fixture.sh

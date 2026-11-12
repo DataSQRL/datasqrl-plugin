@@ -224,13 +224,16 @@ bash "$CLOUD" logs --project <id> --deployment <deploymentId>    # logs
 | `FAILED`                   | Give the user the `View it:` URL, then run `bash "$CLOUD" details <deploymentId>` (per-stage timeline — a failed deploy is usually a compile failure) and `bash "$CLOUD" logs --project <id> --deployment <deploymentId>`, and report what they say. Diagnosing the running pipeline is beyond this skill: point the user at **Troubleshoot** in the Web UI, where the troubleshooting agent runs with the playbooks for it. |
 | still pending after 15 min | **Not a failure.** A deployment can take longer. Hand back the `View it:` URL and `bash "$CLOUD" status <deploymentId>`, and end the turn.                                                                                                                            |
 
+Inform the user if there are other deployments currently running. It is important that the user understands that creating a new deployment does not terminate or pause existing ones.
+
 ---
 
 # What this skill cannot do
 
 Stop and say where it happens. Do not look for another way round.
 
-A new deployment does **not** become the project's main one, and this skill does not make it one.
+A new deployment does **not** become the project's main one, and this skill does not make it one. A new deployment operates in isolation and can never disrupt or interfere with an existing deployment. By contrast, promotion can be potentially destructive.
+
 If the user wants that, tell them the `promote` skill does it and stop — a separate request they
 make after seeing the deploy result. Do not promote here even if they said "deploy and ship it",
 and do not go read that skill to find out how.
