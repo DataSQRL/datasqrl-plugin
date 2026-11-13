@@ -14,6 +14,7 @@ class FakeCloud:
         self.valid_refresh = "refresh-0"
         self.refresh_delay = 0.0
         self.refresh_calls = 0
+        self.refresh_arrivals: list[float] = []
         self.mcp_requests: list[dict] = []
         # (status, body) pairs served before the default behaviour.
         self.mcp_overrides: list[tuple[int, str]] = []
@@ -40,6 +41,7 @@ class FakeCloud:
             self._thread.join()
 
     def refresh(self, token: str) -> tuple[int, dict]:
+        self.refresh_arrivals.append(time.monotonic())
         time.sleep(self.refresh_delay)
         with self._lock:
             self.refresh_calls += 1

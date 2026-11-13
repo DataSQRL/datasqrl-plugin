@@ -8,7 +8,7 @@
 # The subcommands sign in, read deployments, deploy a commit and promote a deployment. Every
 # other DataSQRL Cloud operation, destructive ones included, is a tool of the MCP server at
 # <base URL>/api/mcp. `mcp-headers` and `mcp-bridge` give MCP clients this script's token, and
-# the `cloud` skill gets the user's go-ahead before it runs a tool marked destructive.
+# the `cloud` skill asks the user before it runs a tool that changes anything.
 #
 #   Auth
 #     login                     Device authorization flow. Prints a code and a URL for a
@@ -61,9 +61,11 @@ WAIT_MAX_SECONDS=900
 # Refresh this far ahead of expiry so a slow request cannot straddle the boundary.
 REFRESH_SKEW_SECONDS=120
 
-# A refresh takes about a second; a lock held longer was left by a killed process. Stays under
-# Claude Code's 10s header-helper timeout.
-REFRESH_LOCK_WAIT_SECONDS=8
+# A refresh call gives up after REFRESH_MAX_SECONDS, so a lock folder older than
+# REFRESH_LOCK_STALE_SECONDS was left by a killed process. Both stay under Claude Code's 10s
+# header-helper timeout.
+REFRESH_MAX_SECONDS=5
+REFRESH_LOCK_STALE_SECONDS=8
 
 ORG_IDS_CLAIM="https://datasqrl.com/data_group_ids"
 
@@ -192,12 +194,11 @@ write_cached() {
     local tmp
     tmp=$(mktemp "$CACHE_DIR/.credentials.XXXXXX") || die "cannot write to $CACHE_DIR"
     chmod 600 "$tmp"
-    printf '%s' "$existing" | jq \
+    # Tokens go through the environment: other local users can read argument lists with ps.
+    printf '%s' "$existing" | A="$access" R="$refresh" jq \
         --arg k "$(cache_key)" \
-        --arg a "$access" \
-        --arg r "$refresh" \
         --argjson e "$expires_at" \
-        '.[$k] = {access_token: $a, refresh_token: $r, expires_at: $e}' >"$tmp" \
+        '.[$k] = {access_token: env.A, refresh_token: env.R, expires_at: $e}' >"$tmp" \
         || { rm -f "$tmp"; die "failed to write the token cache"; }
     mv "$tmp" "$CACHE_FILE"
     chmod 600 "$CACHE_FILE"
@@ -221,17 +222,25 @@ decode_jwt_payload() {
 HTTP_STATUS=""
 HTTP_BODY=""
 request() {
-    local method="$1" url="$2" body="${3:-}"
+    local method="$1" url="$2" body="${3:-}" max_time="${4:-}"
     local -a curl_args=(-sS -X "$method" -w '\n%{http_code}' -H 'Accept: application/json')
-    [ -n "$ACCESS_TOKEN" ] && curl_args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
-    if [ -n "$body" ]; then
-        curl_args+=(-H 'Content-Type: application/json' --data-binary "$body")
-    fi
+    [ -n "$max_time" ] && curl_args+=(--max-time "$max_time")
+    [ -n "$body" ] && curl_args+=(-H 'Content-Type: application/json' --data-binary @-)
 
     local response
-    response=$(curl "${curl_args[@]}" "$url") || die "request to $url failed"
+    response=$(printf '%s' "$body" | curl "${curl_args[@]}" -K <(curl_secrets "$url")) \
+        || die "request to $url failed"
     HTTP_STATUS="${response##*$'\n'}"
     HTTP_BODY="${response%$'\n'*}"
+}
+
+# curl config for the URL (a device code rides in a query string) and the token, read through a
+# file descriptor: other local users can read curl's argument list with ps.
+curl_secrets() {
+    printf 'url = "%s"\n' "$1"
+    if [ -n "$ACCESS_TOKEN" ]; then
+        printf 'header = "Authorization: Bearer %s"\n' "$ACCESS_TOKEN"
+    fi
 }
 
 api_error_message() {
@@ -307,24 +316,39 @@ EOF
 
 # Auth0 rotates the refresh token on use, so two processes refreshing at once (an MCP client's
 # header helper and a skill) would spend the same token and sign the user out.
+REFRESH_LOCK_OWNER=""
+
 acquire_refresh_lock() {
     mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
-    local waited=0
+    local age
     until mkdir "$REFRESH_LOCK" 2>/dev/null; do
-        if [ "$waited" -ge "$REFRESH_LOCK_WAIT_SECONDS" ]; then
-            rmdir "$REFRESH_LOCK" 2>/dev/null
-            waited=0
+        age=$(lock_age_seconds) || continue
+        if [ "$age" -ge "$REFRESH_LOCK_STALE_SECONDS" ]; then
+            rm -rf "$REFRESH_LOCK"
             continue
         fi
-        sleep 1
-        waited=$(( waited + 1 ))
+        sleep 0.2
     done
+    REFRESH_LOCK_OWNER="$$.$RANDOM.$(date +%s)"
+    printf '%s' "$REFRESH_LOCK_OWNER" >"$REFRESH_LOCK/owner"
     trap release_refresh_lock EXIT
 }
 
+# Leaves a lock alone once another process has taken it over as stale.
 release_refresh_lock() {
-    rmdir "$REFRESH_LOCK" 2>/dev/null
+    if [ -n "$REFRESH_LOCK_OWNER" ] \
+        && [ "$(cat "$REFRESH_LOCK/owner" 2>/dev/null)" = "$REFRESH_LOCK_OWNER" ]; then
+        rm -rf "$REFRESH_LOCK"
+    fi
+    REFRESH_LOCK_OWNER=""
     trap - EXIT
+}
+
+lock_age_seconds() {
+    local mtime
+    mtime=$(stat -c %Y "$REFRESH_LOCK" 2>/dev/null || stat -f %m "$REFRESH_LOCK" 2>/dev/null) \
+        || return 1
+    echo $(( $(date +%s) - mtime ))
 }
 
 token_is_fresh() {
@@ -359,7 +383,7 @@ load_token() {
     # Cleared so the refresh call is unauthenticated; an expired bearer would 401 it.
     ACCESS_TOKEN=""
     request POST "$BASE_URL/auth/device/token/refresh" \
-        "$(jq -nc --arg t "$refresh_token" '{refresh_token: $t}')"
+        "$(T="$refresh_token" jq -nc '{refresh_token: env.T}')" "$REFRESH_MAX_SECONDS"
     [ "${HTTP_STATUS:0:1}" = "2" ] \
         || die "could not refresh the access token ($(api_error_message)). Run: $0 login"
 
@@ -827,7 +851,7 @@ cmd_mcp_headers() {
         BASE_URL="${BASE_URL%/api/mcp}"
     fi
     load_token
-    jq -nc --arg t "$ACCESS_TOKEN" '{Authorization: ("Bearer " + $t)}'
+    T="$ACCESS_TOKEN" jq -nc '{Authorization: ("Bearer " + env.T)}'
 }
 
 MCP_PROTOCOL_VERSION=""
@@ -843,16 +867,17 @@ bridge_load_token() {
     esac
 }
 
-# Like request(), but a network failure sets HTTP_STATUS=000 instead of exiting.
+# Like request(), but a network failure or timeout sets HTTP_STATUS=000 instead of exiting. The
+# bridge handles one message at a time, so a hung call would block every later one.
 mcp_post() {
-    local -a curl_args=(-sS -X POST -w '\n%{http_code}'
+    local -a curl_args=(-sS -X POST -w '\n%{http_code}' --connect-timeout 10 --max-time 300
         -H 'Content-Type: application/json'
         -H 'Accept: application/json, text/event-stream'
-        -H "Authorization: Bearer $ACCESS_TOKEN")
+        --data-binary @-)
     [ -n "$MCP_PROTOCOL_VERSION" ] && curl_args+=(-H "MCP-Protocol-Version: $MCP_PROTOCOL_VERSION")
 
     local response
-    response=$(curl "${curl_args[@]}" --data-binary "$1" "$BASE_URL/api/mcp" 2>/dev/null) \
+    response=$(printf '%s' "$1" | curl "${curl_args[@]}" -K <(curl_secrets "$BASE_URL/api/mcp") 2>/dev/null) \
         || response=$'\n000'
     HTTP_STATUS="${response##*$'\n'}"
     HTTP_BODY="${response%$'\n'*}"

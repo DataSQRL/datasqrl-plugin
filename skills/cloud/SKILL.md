@@ -1,6 +1,6 @@
 ---
 name: cloud
-description: Use when the user wants to look at or change something in DataSQRL Cloud other than deploying a commit or promoting a deployment - alerts, metrics, logs, deployment status, projects, secrets, members, or terminating, stopping, starting or resizing a deployment. Not for creating a deployment from a commit (the deploy skill) or making one the project's main deployment (the promote skill).
+description: Use when the user wants to look at or change something in DataSQRL Cloud other than deploying, checking a deployment's status or logs, or promoting - alerts, alert routes, metrics, projects, secrets, members, or terminating, stopping, starting or resizing a deployment. Not for creating a deployment or reading its status or logs (the deploy skill), or making one the project's main deployment (the promote skill).
 allowed-tools: Bash, Read, Skill
 ---
 
@@ -24,9 +24,10 @@ the token and keeps it fresh.
 
 | Request                                         | Use                                      |
 | ----------------------------------------------- | ---------------------------------------- |
-| Deploy a commit, create a deployment            | the `deploy` skill, not a tool           |
+| Deploy a commit or uploaded content, create a deployment | the `deploy` skill, never a tool: the create-deployment tools skip its commit checks, and one commits content to the repository |
+| A deployment's status or logs                   | the `deploy` skill                       |
 | Make a deployment the project's main one        | the `promote` skill, not a tool          |
-| Diagnose why a running pipeline misbehaves      | Web UI — **Troubleshoot**; that agent has the playbooks. Logs and status from the tools are fine to show first. |
+| Diagnose why a running pipeline misbehaves      | Web UI — **Troubleshoot**; that agent has the playbooks |
 | Everything else in DataSQRL Cloud               | the tools, as below                      |
 
 The deploy and promote skills check the commit and the current main deployment before they act,
@@ -44,21 +45,20 @@ If more than one candidate fits, ask. Never guess an id for a change.
 
 # Step 2 — Call the tools
 
-Read-only tools (listing, status, logs, metrics, alerts) can run straight away. Report what they
+Tools that only read (listing, getting, metrics, alerts) can run straight away. Report what they
 return in plain words, with the ids the user may need next.
 
-**A destructive tool needs the user's go-ahead in this conversation.** Do not count on the client
-to ask: depending on its permission settings, it may run the tool without a prompt.
+**Every other tool needs the user's yes before you call it**, even when they asked for it by name.
+That covers creating something (a project, a secret, an alert route), snoozing an alert, and
+changing or deleting anything. The server marks only some of these destructive, and the client may
+run any of them without a prompt, depending on its permission settings.
 
-- The user's own words name the action and a target that matches exactly one deployment or project
-  ("terminate deployment 21fc9306", "delete project orders-dev"): say what the call will do, then
-  run it.
-- Anything else, such as a target you matched from a list or a broad request like "clean up the old
-  deployments": say what the call will do and wait for a yes in the user's own words.
-
-Saying what the call will do means naming the action, the deployment or project by name and id,
-and what the user loses (a terminated deployment stops serving and does not come back). If the
-user or the client declines, stop; do not look for another way to do it.
+1. Say what the call will do: the action, the target by name and id, and what the user loses, if
+   anything (a terminated deployment stops serving and does not come back; deleting a project
+   terminates its deployments).
+2. Wait for a yes in the user's own words. A request made before they saw this, such as "terminate
+   deployment 21fc9306", does not count.
+3. If they decline, or the client denies the call, stop; do not look for another way to do it.
 
 # When the tools fail or are missing
 

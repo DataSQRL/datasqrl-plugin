@@ -9,7 +9,7 @@ This skill answers two kinds of request Decide which kind the request is, read t
 | The request | Read |
 |---|---|
 | changes files in the project: a new pipeline or catalog, a feature, a fix, a requirements document, a plan | [Building with DataSQRL](#building-with-datasqrl), next |
-| moves the project to DataSQRL Cloud: deploy, ship or release it, check a deployment's status or logs, sign in, promote a deployment to main | [Deploying to DataSQRL Cloud](#deploying-to-datasqrl-cloud), at the end |
+| moves the project to DataSQRL Cloud: deploy, ship or release it, check a deployment's status or logs, sign in, promote a deployment to main; or anything else in DataSQRL Cloud, such as alerts, secrets or terminating a deployment | [Deploying to DataSQRL Cloud](#deploying-to-datasqrl-cloud), at the end |
 
 Building DataSQRL runs a containerized agent that writes into the
 working tree and leaves its work uncommitted, for the user to commit. 
@@ -245,8 +245,7 @@ The [`plan`](../plan/SKILL.md), [`implement`](../implement/SKILL.md) and [`patch
 
 # Deploying to DataSQRL Cloud
 
-Shipping to DataSQRL Cloud is two skills, and each is a **separate request the user makes**. Both
-reach the Cloud API through `scripts/datasqrl-cloud.sh` and need neither Docker nor the agent image. So, invoke the skill directly.
+DataSQRL Cloud work goes through three skills, and each is a **separate request the user makes**. None needs Docker or the agent image, so invoke the skill directly.
 
 | When the user asks to… | Invoke |
 |---|---|
@@ -254,10 +253,13 @@ reach the Cloud API through `scripts/datasqrl-cloud.sh` and need neither Docker 
 | check how a deployment is going, read its status or logs | the `deploy` skill |
 | sign in to DataSQRL Cloud, or list their organizations or projects | the `deploy` skill |
 | make a deployment the project's **main** one — promote it, point production at it | the `promote` skill |
+| anything else in DataSQRL Cloud: alerts, metrics, projects, secrets, members; stop, start, resize or terminate a deployment | the `cloud` skill |
 
 Invoke the skill and let it run its own steps; it handles the git checks, the sign-in, the choice of commit and the project lookup itself.
 
-Two conditions keep this section honest:
+Three conditions keep this section honest:
+
+- **DataSQRL Cloud tools only through these skills.** The DataSQRL Cloud MCP server's own instructions describe the raw API, such as deploying with `POST /api/v1/deployments` or promoting with `runDeploymentAction`. The skills above take precedence: never call a DataSQRL Cloud tool outside the `cloud` skill.
 
 - **Wait to be asked.** This section opens on the user's own request. After a build run, report the result, ask the user to review the changes and tell them they may commit and push, as [After any agent run](#after-any-agent-run) says. The user decides when that code ships, in a request of their own.
 - **A deploy never promotes.** Adding a deployment changes nothing about which one is main, so "deploy and ship it" is a deploy, and promoting stays a fresh request. Invoke `promote` only when the user asks for it in its own right, after seeing a deploy result.

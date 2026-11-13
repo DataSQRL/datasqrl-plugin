@@ -7,7 +7,7 @@ This page states what the DataSQRL plugin reads, where data goes, and what stays
 - The plugin has no telemetry of its own. Its skills are instructions for your coding agent, and they send data only through the two scripts in `scripts/`.
 - The DataSQRL Code Agent runs in a Docker container on your machine. It sends your prompts and project code to the model provider you choose, and to nothing else unless you opt in.
 - Telemetry is off by default. With `DATASQRL_TELEMETRY=1`, the run log is uploaded to DataSQRL for troubleshooting.
-- `deploy`, `promote` and the DataSQRL Cloud MCP tools talk to DataSQRL Cloud. Once you are signed in, your coding agent also connects to the MCP server when a session starts, to list the tools. The `cloud` skill runs a tool marked destructive only when you named the action and its target, or agreed to it.
+- `deploy`, `promote` and the DataSQRL Cloud MCP tools talk to DataSQRL Cloud. Once you are signed in, your coding agent also connects to the MCP server when a session starts, to list the tools. The skills tell your coding agent to ask you before a tool that changes anything; outside the skills, the agent's own permission settings decide whether it asks.
 
 Your coding agent (Claude Code, Codex, Cursor or Copilot) has its own data policy, which this page does not cover.
 

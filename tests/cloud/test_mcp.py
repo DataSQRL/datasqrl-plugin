@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +53,18 @@ def lines(*messages: dict) -> str:
     return "".join(json.dumps(m) + "\n" for m in messages)
 
 
+def shim_curl_and_jq(tmp_path: Path) -> Path:
+    """Puts curl and jq wrappers that log their arguments in a directory; returns the log path."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = bin_dir / "argv.log"
+    for tool in ("curl", "jq"):
+        shim = bin_dir / tool
+        shim.write_text(f'#!/bin/bash\nprintf "%s\\n" "{tool} $*" >>"{log}"\nexec {shutil.which(tool)} "$@"\n')
+        shim.chmod(0o755)
+    return log
+
+
 class TestMcpHeaders:
     def test_prints_the_cached_token_without_refreshing(self, cloud, config):
         seed(config, cloud.host, "access-0", "refresh-0", 3600)
@@ -89,6 +103,51 @@ class TestMcpHeaders:
         assert {r.stdout.strip() for r in results} == {json.dumps({"Authorization": "Bearer access-1"}, separators=(",", ":"))}
         assert not (config / "datasqrl" / ".refresh.lock").exists()
 
+    def test_a_slow_refresh_gives_up_and_its_lock_is_never_taken_over(self, cloud, config):
+        seed(config, cloud.host, "access-0", "refresh-0", 30)
+        cloud.refresh_delay = 9
+
+        def timed_run(_):
+            r = run(config, cloud, "mcp-headers")
+            return r, time.monotonic()
+
+        start = time.monotonic()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(timed_run, range(2)))
+        assert [r.returncode for r, _ in results] == [1, 1]
+        first_exit = min(end for _, end in results)
+        # Each refresh call gives up after 5s; the second starts only once the first process let go.
+        assert first_exit - start < 7
+        assert len(cloud.refresh_arrivals) == 2
+        assert cloud.refresh_arrivals[1] >= first_exit - 0.5
+        assert not (config / "datasqrl" / ".refresh.lock").exists()
+
+    def test_a_lock_left_by_a_killed_process_is_taken_over(self, cloud, config):
+        seed(config, cloud.host, "access-0", "refresh-0", 30)
+        lock = config / "datasqrl" / ".refresh.lock"
+        lock.mkdir()
+        (lock / "owner").write_text("killed")
+        old = time.time() - 60
+        os.utime(lock, (old, old))
+        r = run(config, cloud, "mcp-headers")
+        assert r.returncode == 0, r.stderr
+        assert json.loads(r.stdout) == {"Authorization": "Bearer access-1"}
+        assert not lock.exists()
+
+    def test_tokens_never_appear_in_a_command_line(self, cloud, config, tmp_path):
+        log = shim_curl_and_jq(tmp_path)
+        seed(config, cloud.host, "revoked", "refresh-0", 3600)
+        call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "createSecret", "arguments": {"value": "s3cr3t-value"}}}
+        r = run(config, cloud, "mcp-bridge", stdin=lines(call),
+                PATH=f"{log.parent}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
+        assert r.returncode == 0, r.stderr
+        assert json.loads(r.stdout)["result"] == {"echo": "tools/call"}
+        logged = log.read_text()
+        assert "curl" in logged and "jq" in logged
+        for secret in ("revoked", "refresh-0", "access-1", "refresh-1", "s3cr3t-value"):
+            assert secret not in logged
+
 
 class TestMcpBridge:
     def test_relays_a_request_with_the_token_and_mcp_accept_header(self, cloud, config):
@@ -100,6 +159,14 @@ class TestMcpBridge:
         headers = cloud.mcp_requests[0]["headers"]
         assert headers["authorization"] == "Bearer access-0"
         assert "application/json" in headers["accept"] and "text/event-stream" in headers["accept"]
+
+    def test_relays_a_message_larger_than_one_command_line_argument_may_be(self, cloud, config):
+        seed(config, cloud.host, "access-0", "refresh-0", 3600)
+        call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"blob": "x" * 200_000}}
+        r = run(config, cloud, "mcp-bridge", stdin=lines(call))
+        assert r.returncode == 0, r.stderr
+        assert json.loads(r.stdout)["result"] == {"echo": "tools/call"}
+        assert json.loads(cloud.mcp_requests[0]["body"]) == call
 
     def test_a_notification_gets_no_reply(self, cloud, config):
         seed(config, cloud.host, "access-0", "refresh-0", 3600)

@@ -29,7 +29,7 @@ the test runner and the reviewing judges.
 | `progress` | `/datasqrl:progress` | Everything about the current run: is it still going, what its progress output means, whether it is stuck; stops it on request. |
 | `deploy` | `/datasqrl:deploy` | Deploys a committed and pushed project to DataSQRL Cloud, waits for it, reports the result. Also reads deployment status and logs. |
 | `promote` | `/datasqrl:promote` | Makes an existing deployment the project's main one, after showing you which one it replaces. |
-| `cloud` | `/datasqrl:cloud` | Everything else in DataSQRL Cloud — alerts, metrics, logs, projects, secrets, members, terminating or resizing a deployment — through the DataSQRL Cloud MCP tools. |
+| `cloud` | `/datasqrl:cloud` | Everything else in DataSQRL Cloud — alerts, metrics, projects, secrets, members, terminating or resizing a deployment — through the DataSQRL Cloud MCP tools. Asks you before any change. |
 
 `deploy` is a separate step you ask for, not the tail of an implementation run. It deploys a
 commit from GitHub rather than your working tree, so the work has to be committed and pushed
@@ -41,10 +41,11 @@ The plugin connects your agent to the DataSQRL Cloud MCP server, which serves ev
 the DataSQRL Cloud API as a tool. New operations show up without a plugin update. Sign in once
 (`deploy` or `cloud` asks you to), and the tools keep working as the token refreshes.
 
-Tools that change or delete something are marked destructive. The `cloud` skill runs one only when
-you named the action and its target, and otherwise asks you first. Whether your agent also prompts
-depends on its permission settings: Claude Code in auto mode, for one, runs a tool you asked for
-without a prompt. Set `DATASQRL_BASE_URL` to point the plugin at another DataSQRL Cloud host.
+The server marks tools that delete or replace something as destructive, but creating a project or a
+secret changes things too. The skills tell your agent to ask you before any tool that changes
+something. Whether the agent itself prompts depends on its permission settings: Claude Code in auto
+mode, for one, runs a tool without a prompt. In Claude Code, `runDeploymentAction` is one tool for
+promote, stop, resize and terminate, so "always allow" on one promote also allows terminate. Set `DATASQRL_BASE_URL` to point the plugin at another DataSQRL Cloud host.
 
 | Agent | How it connects |
 |-------|-----------------|

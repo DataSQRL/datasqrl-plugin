@@ -15,8 +15,9 @@ CLOUD="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-cloud.sh"
 [ -f "$CLOUD" ] || CLOUD=datasqrl-cloud.sh   # fall back to PATH
 ```
 
-**Deploy through the script, never with `curl` yourself.** It carries the token, keeps it fresh,
-and runs the commit checks below, which a hand-written call or a bare MCP tool call would skip.
+**Deploy through the script, never with `curl` or an MCP tool.** It carries the token, keeps it
+fresh, and runs the commit checks below, which a hand-written call or a create-deployment tool would
+skip. One of those tools even commits the content it is given to the repository.
 
 The script needs `curl` and `jq`. If `jq` is missing the script says so and prints the install line —
 relay it and stop.
@@ -237,4 +238,4 @@ and do not go read that skill to find out how.
 | Make a deployment the project's main one      | the `promote` skill — tell the user, do not do it  |
 | Terminate, stop, start or resize a deployment, manage projects, members, secrets or alerts | the `cloud` skill, a separate request |
 | Diagnose a failing or unhealthy pipeline      | Web UI — **Troubleshoot**; that agent has the playbooks, this one does not |
-| Deploy uncommitted or unpushed code           | Not possible — deploy a pushed commit, or push it  |
+| Deploy uncommitted or unpushed code           | Not offered — the user commits and pushes it, then you deploy that commit |
