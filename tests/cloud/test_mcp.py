@@ -93,26 +93,12 @@ class TestMcpHeaders:
         assert "access-0" not in r.stdout
         assert "other.example" in r.stderr
 
-    @pytest.mark.parametrize("attempt", range(15))
-    def test_concurrent_refreshes_spend_the_refresh_token_once(self, cloud, config, attempt):
+    def test_concurrent_refreshes_spend_the_refresh_token_once(self, cloud, config):
         seed(config, cloud.host, "access-0", "refresh-0", 30)
         cloud.refresh_delay = 0.5
-
-        def traced(_):
-            return subprocess.run(
-                ["bash", "-x", str(SCRIPT), "mcp-headers"], capture_output=True, text=True, timeout=30,
-                env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(config.parent),
-                     "XDG_CONFIG_HOME": str(config), "DATASQRL_BASE_URL": cloud.base_url,
-                     "PS4": "+ $(date +%s.%N | cut -c7-15) $$ "})
-
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            results = list(pool.map(traced, range(3)))
-        if any(r.returncode for r in results):
-            for r in results:
-                print("=== PROC rc", r.returncode)
-                print("\n".join(x for x in r.stderr.splitlines()
-                                if not x.startswith("++ ") or "lock" in x or "owner" in x or "date" in x))
-        assert [r.returncode for r in results] == [0, 0, 0], [r.stderr[-300:] for r in results]
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(lambda _: run(config, cloud, "mcp-headers"), range(6)))
+        assert [r.returncode for r in results] == [0] * 6, [r.stderr for r in results]
         assert cloud.refresh_calls == 1
         assert {r.stdout.strip() for r in results} == {json.dumps({"Authorization": "Bearer access-1"}, separators=(",", ":"))}
         assert not (config / "datasqrl" / ".refresh.lock").exists()
@@ -122,11 +108,7 @@ class TestMcpHeaders:
         cloud.refresh_delay = 9
 
         def timed_run(_):
-            r = subprocess.run(
-                ["bash", "-x", str(SCRIPT), "mcp-headers"], capture_output=True, text=True, timeout=30,
-                env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(config.parent),
-                     "XDG_CONFIG_HOME": str(config), "DATASQRL_BASE_URL": cloud.base_url,
-                     "PS4": "+ $(date +%s.%N | cut -c7-15) $$ "})
+            r = run(config, cloud, "mcp-headers")
             return r, time.monotonic()
 
         start = time.monotonic()
@@ -135,9 +117,6 @@ class TestMcpHeaders:
         timeline = {"exits": [round(end - start, 2) for _, end in results],
                     "refreshes": [round(t - start, 2) for t in cloud.refresh_arrivals],
                     "stderr": [r.stderr for r, _ in results]}
-        for r, _ in results:
-            print("=== TRACE ===")
-            print("\n".join(x for x in r.stderr.splitlines() if "lock" in x.lower() or "mkdir" in x or "curl" in x or "rm " in x or "Error" in x))
         assert [r.returncode for r, _ in results] == [1, 1], timeline
         first_exit = min(end for _, end in results)
         # Each refresh call gives up after 5s; the second starts only once the first process let go.
@@ -146,13 +125,15 @@ class TestMcpHeaders:
         assert cloud.refresh_arrivals[1] >= first_exit - 0.5, timeline
         assert not (config / "datasqrl" / ".refresh.lock").exists()
 
-    def test_a_lock_left_by_a_killed_process_is_taken_over(self, cloud, config):
+    # Empty: killed before writing the lock, so its mtime dates it.
+    @pytest.mark.parametrize("content", ["", f"999.1.{int(time.time()) - 60}"])
+    def test_a_lock_left_by_a_killed_process_is_taken_over(self, cloud, config, content):
         seed(config, cloud.host, "access-0", "refresh-0", 30)
         lock = config / "datasqrl" / ".refresh.lock"
-        lock.mkdir()
-        (lock / "owner").write_text("killed")
-        old = time.time() - 60
-        os.utime(lock, (old, old))
+        lock.write_text(content)
+        if not content:
+            old = time.time() - 60
+            os.utime(lock, (old, old))
         r = run(config, cloud, "mcp-headers")
         assert r.returncode == 0, r.stderr
         assert json.loads(r.stdout) == {"Authorization": "Bearer access-1"}

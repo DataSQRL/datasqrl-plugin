@@ -321,36 +321,38 @@ REFRESH_LOCK_OWNER=""
 acquire_refresh_lock() {
     mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
     local age
-    until mkdir "$REFRESH_LOCK" 2>/dev/null; do
+    while :; do
+        # Ends with the creation time, which lock_age_seconds reads.
+        REFRESH_LOCK_OWNER="$$.$RANDOM.$(date +%s)"
+        # noclobber creates the file with O_EXCL. Not `mkdir`: uutils coreutils (Ubuntu 26.04)
+        # lets two concurrent calls both succeed.
+        ( set -C; printf '%s' "$REFRESH_LOCK_OWNER" >"$REFRESH_LOCK" ) 2>/dev/null && break
         age=$(lock_age_seconds) || continue
         if [ "$age" -ge "$REFRESH_LOCK_STALE_SECONDS" ]; then
             echo "Removing a token refresh lock left ${age}s ago by a stopped process." >&2
-            rm -rf "$REFRESH_LOCK"
+            rm -f "$REFRESH_LOCK"
             continue
         fi
         sleep 0.2
     done
-    # Ends with the creation time, which lock_age_seconds reads.
-    REFRESH_LOCK_OWNER="$$.$RANDOM.$(date +%s)"
-    printf '%s' "$REFRESH_LOCK_OWNER" >"$REFRESH_LOCK/owner"
     trap release_refresh_lock EXIT
 }
 
 # Leaves a lock alone once another process has taken it over as stale.
 release_refresh_lock() {
     if [ -n "$REFRESH_LOCK_OWNER" ] \
-        && [ "$(cat "$REFRESH_LOCK/owner" 2>/dev/null)" = "$REFRESH_LOCK_OWNER" ]; then
-        rm -rf "$REFRESH_LOCK"
+        && [ "$(cat "$REFRESH_LOCK" 2>/dev/null)" = "$REFRESH_LOCK_OWNER" ]; then
+        rm -f "$REFRESH_LOCK"
     fi
     REFRESH_LOCK_OWNER=""
     trap - EXIT
 }
 
-# The owner file's time comes from the same clock as `date`; the folder's mtime is the fallback
-# for a holder killed before it wrote that file.
+# The lock's own time comes from the same clock as `date`; the file's mtime is the fallback for a
+# holder killed between creating the file and writing it.
 lock_age_seconds() {
     local created
-    created=$(cat "$REFRESH_LOCK/owner" 2>/dev/null)
+    created=$(cat "$REFRESH_LOCK" 2>/dev/null) || return 1
     created="${created##*.}"
     case "$created" in
         ''|*[!0-9]*)
