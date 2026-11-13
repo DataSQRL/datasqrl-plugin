@@ -1,6 +1,6 @@
 {
   "name": "datasqrl",
-  "version": "0.3.8",
+  "version": "0.4.0",
   "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
   "author": {
     "name": "DataSQRL",
@@ -17,5 +17,14 @@
     "flink",
     "graphql"
   ],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "mcpServers": {
+    "datasqrl": {
+      "command": "bash",
+      "args": [
+        "${CURSOR_PLUGIN_ROOT}/scripts/datasqrl-cloud.sh",
+        "mcp-bridge"
+      ]
+    }
+  }
 }
