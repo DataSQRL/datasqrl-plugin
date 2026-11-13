@@ -93,12 +93,26 @@ class TestMcpHeaders:
         assert "access-0" not in r.stdout
         assert "other.example" in r.stderr
 
-    def test_concurrent_refreshes_spend_the_refresh_token_once(self, cloud, config):
+    @pytest.mark.parametrize("attempt", range(15))
+    def test_concurrent_refreshes_spend_the_refresh_token_once(self, cloud, config, attempt):
         seed(config, cloud.host, "access-0", "refresh-0", 30)
         cloud.refresh_delay = 0.5
+
+        def traced(_):
+            return subprocess.run(
+                ["bash", "-x", str(SCRIPT), "mcp-headers"], capture_output=True, text=True, timeout=30,
+                env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(config.parent),
+                     "XDG_CONFIG_HOME": str(config), "DATASQRL_BASE_URL": cloud.base_url,
+                     "PS4": "+ $(date +%s.%N | cut -c7-15) $$ "})
+
         with ThreadPoolExecutor(max_workers=3) as pool:
-            results = list(pool.map(lambda _: run(config, cloud, "mcp-headers"), range(3)))
-        assert [r.returncode for r in results] == [0, 0, 0], [r.stderr for r in results]
+            results = list(pool.map(traced, range(3)))
+        if any(r.returncode for r in results):
+            for r in results:
+                print("=== PROC rc", r.returncode)
+                print("\n".join(x for x in r.stderr.splitlines()
+                                if not x.startswith("++ ") or "lock" in x or "owner" in x or "date" in x))
+        assert [r.returncode for r in results] == [0, 0, 0], [r.stderr[-300:] for r in results]
         assert cloud.refresh_calls == 1
         assert {r.stdout.strip() for r in results} == {json.dumps({"Authorization": "Bearer access-1"}, separators=(",", ":"))}
         assert not (config / "datasqrl" / ".refresh.lock").exists()
