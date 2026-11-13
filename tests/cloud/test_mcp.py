@@ -108,7 +108,11 @@ class TestMcpHeaders:
         cloud.refresh_delay = 9
 
         def timed_run(_):
-            r = run(config, cloud, "mcp-headers")
+            r = subprocess.run(
+                ["bash", "-x", str(SCRIPT), "mcp-headers"], capture_output=True, text=True, timeout=30,
+                env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(config.parent),
+                     "XDG_CONFIG_HOME": str(config), "DATASQRL_BASE_URL": cloud.base_url,
+                     "PS4": "+ $(date +%s.%N | cut -c7-15) $$ "})
             return r, time.monotonic()
 
         start = time.monotonic()
@@ -117,6 +121,9 @@ class TestMcpHeaders:
         timeline = {"exits": [round(end - start, 2) for _, end in results],
                     "refreshes": [round(t - start, 2) for t in cloud.refresh_arrivals],
                     "stderr": [r.stderr for r, _ in results]}
+        for r, _ in results:
+            print("=== TRACE ===")
+            print("\n".join(x for x in r.stderr.splitlines() if "lock" in x.lower() or "mkdir" in x or "curl" in x or "rm " in x or "Error" in x))
         assert [r.returncode for r, _ in results] == [1, 1], timeline
         first_exit = min(end for _, end in results)
         # Each refresh call gives up after 5s; the second starts only once the first process let go.
