@@ -114,12 +114,15 @@ class TestMcpHeaders:
         start = time.monotonic()
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(timed_run, range(2)))
-        assert [r.returncode for r, _ in results] == [1, 1]
+        timeline = {"exits": [round(end - start, 2) for _, end in results],
+                    "refreshes": [round(t - start, 2) for t in cloud.refresh_arrivals],
+                    "stderr": [r.stderr for r, _ in results]}
+        assert [r.returncode for r, _ in results] == [1, 1], timeline
         first_exit = min(end for _, end in results)
         # Each refresh call gives up after 5s; the second starts only once the first process let go.
-        assert first_exit - start < 7
-        assert len(cloud.refresh_arrivals) == 2
-        assert cloud.refresh_arrivals[1] >= first_exit - 0.5
+        assert first_exit - start < 7, timeline
+        assert len(cloud.refresh_arrivals) == 2, timeline
+        assert cloud.refresh_arrivals[1] >= first_exit - 0.5, timeline
         assert not (config / "datasqrl" / ".refresh.lock").exists()
 
     def test_a_lock_left_by_a_killed_process_is_taken_over(self, cloud, config):

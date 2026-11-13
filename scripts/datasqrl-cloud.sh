@@ -324,11 +324,13 @@ acquire_refresh_lock() {
     until mkdir "$REFRESH_LOCK" 2>/dev/null; do
         age=$(lock_age_seconds) || continue
         if [ "$age" -ge "$REFRESH_LOCK_STALE_SECONDS" ]; then
+            echo "Removing a token refresh lock left ${age}s ago by a stopped process." >&2
             rm -rf "$REFRESH_LOCK"
             continue
         fi
         sleep 0.2
     done
+    # Ends with the creation time, which lock_age_seconds reads.
     REFRESH_LOCK_OWNER="$$.$RANDOM.$(date +%s)"
     printf '%s' "$REFRESH_LOCK_OWNER" >"$REFRESH_LOCK/owner"
     trap release_refresh_lock EXIT
@@ -344,11 +346,18 @@ release_refresh_lock() {
     trap - EXIT
 }
 
+# The owner file's time comes from the same clock as `date`; the folder's mtime is the fallback
+# for a holder killed before it wrote that file.
 lock_age_seconds() {
-    local mtime
-    mtime=$(stat -c %Y "$REFRESH_LOCK" 2>/dev/null || stat -f %m "$REFRESH_LOCK" 2>/dev/null) \
-        || return 1
-    echo $(( $(date +%s) - mtime ))
+    local created
+    created=$(cat "$REFRESH_LOCK/owner" 2>/dev/null)
+    created="${created##*.}"
+    case "$created" in
+        ''|*[!0-9]*)
+            created=$(stat -c %Y "$REFRESH_LOCK" 2>/dev/null || stat -f %m "$REFRESH_LOCK" 2>/dev/null) \
+                || return 1 ;;
+    esac
+    echo $(( $(date +%s) - created ))
 }
 
 token_is_fresh() {
