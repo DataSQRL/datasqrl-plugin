@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: cloud-alerts-route-to-cloud
+description: A request for alerts. The cloud skill takes it, not the deploy skill.
+tags: [cloud]
+context:
+  scaffold_script: fixture.sh

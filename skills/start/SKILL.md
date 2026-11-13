@@ -296,7 +296,7 @@ Invoke the skill and let it run its own steps; it handles the git checks, the si
 
 Three conditions keep this section honest:
 
-- **DataSQRL Cloud tools only through these skills.** The DataSQRL Cloud MCP server's own instructions describe the raw API, such as deploying with `POST /api/v1/deployments` or promoting with `runDeploymentAction`. The skills above take precedence: never call a DataSQRL Cloud tool outside the `cloud` skill.
+- **DataSQRL Cloud tools only through these skills.** The DataSQRL Cloud MCP server's own instructions are written for any client. The skills above take precedence: deploy and promote through their skills, and never call a DataSQRL Cloud tool outside the `cloud` skill.
 
 - **Wait to be asked.** This section opens on the user's own request. After a build run, report the result, ask the user to review the changes and tell them they may commit and push, as [After any agent run](#after-any-agent-run) says. The user decides when that code ships, in a request of their own.
 - **A deploy never promotes.** Adding a deployment changes nothing about which one is main, so "deploy and ship it" is a deploy, and promoting stays a fresh request. Invoke `promote` only when the user asks for it in its own right, after seeing a deploy result.
