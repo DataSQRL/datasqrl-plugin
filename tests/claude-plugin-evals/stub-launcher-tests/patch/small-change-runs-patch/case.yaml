@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: patch-small-change-runs-patch
+description: A small, fully determined change to an existing project. The agent runs the patch skill, and the patch skill calls the launcher with --mode patch.
+tags: [patch, stub-launcher]
+context:
+  scaffold_script: fixture.sh

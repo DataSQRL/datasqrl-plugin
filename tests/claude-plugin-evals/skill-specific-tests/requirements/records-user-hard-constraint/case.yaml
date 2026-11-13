@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: requirements-records-user-hard-constraint
+description: The user says that one classification model is required, and gives the reason. The requirements skill writes it under Hard constraints, with the reason.
+tags: [requirements]
+context:
+  scaffold_script: fixture.sh

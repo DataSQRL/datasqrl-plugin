@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: requirements-confirms-hard-constraints
+description: The notes name Postgres in passing and give a fixed GraphQL query. The requirements skill keeps the query, and records Postgres as an open question, not as a hard constraint.
+tags: [requirements]
+context:
+  scaffold_script: fixture.sh

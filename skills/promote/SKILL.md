@@ -7,10 +7,11 @@ allowed-tools: Bash, Read, Skill
 
 Make an existing DataSQRL Cloud deployment the project's **main** deployment.
 
-**This changes what the project serves.** Promoting repoints the project's main deployment, so
-traffic that reached the old one reaches the new one. Creating a deployment does not do this and
-never implies it, so this runs only when the user asks for it in its own right — not as the tail
-of anything else, and not inferred from "ship it".
+**This changes what the project serves.** Promoting repoints the project's main deployment, which means:
+- for APIs, the project API URL is routed to the promoted deployment's URL.
+- for data lake tables and views, the main view is updated to the view of the promoted deployment.
+- 
+Creating a deployment does not do this and never implies it, so this runs only when the user asks for it in its own right — not as the tail of anything else, and not inferred from "ship it". Promotion is potentially disruptive if the promoted deployment is not fully caught up, defective, or simply incompatible with the current main deployment. Hence, always ensure the user unambiguously confirms promotion.
 
 Everything goes through one script:
 
