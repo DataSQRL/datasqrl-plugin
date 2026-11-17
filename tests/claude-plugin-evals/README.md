@@ -49,6 +49,8 @@ tests/claude-plugin-evals/
 │   │       ├── prompt.md            # the user message and the run limits
 │   │       └── graders/             # one file for each check
 │   ├── start/                       # cases for skills/start
+│   ├── cloud/                       # cases for skills/cloud
+│   ├── deploy/                      # cases for skills/deploy
 │   └── results/                     # written by each run, in .gitignore
 ├── stub-launcher-tests/             # eval folder: cases on a plugin copy with the stub launcher
 │   ├── patch/                       # cases for skills/patch

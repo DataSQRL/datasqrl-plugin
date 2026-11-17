@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: deploy-status-and-logs-stay-with-deploy
+description: A deployment status and logs request. The deploy skill takes it, not the cloud skill.
+tags: [deploy, cloud]
+context:
+  scaffold_script: fixture.sh

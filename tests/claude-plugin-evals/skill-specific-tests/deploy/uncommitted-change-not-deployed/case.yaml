@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: deploy-uncommitted-change-not-deployed
+description: A request to deploy an uncommitted change. The deploy skill asks for a commit and push instead of deploying uploaded content.
+tags: [deploy]
+context:
+  scaffold_script: fixture.sh

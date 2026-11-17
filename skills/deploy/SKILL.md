@@ -15,9 +15,9 @@ CLOUD="${CLAUDE_PLUGIN_ROOT}/scripts/datasqrl-cloud.sh"
 [ -f "$CLOUD" ] || CLOUD=datasqrl-cloud.sh   # fall back to PATH
 ```
 
-**Talk to the DataSQRL Cloud API only through the script.** It carries the token, keeps it fresh,
-and offers exactly the operations that are allowed — which is what a hand-written `curl` call
-would lose.
+**Deploy through the script, never with `curl` or an MCP tool.** It carries the token, keeps it
+fresh, and runs the commit checks below, which a hand-written call or a create-deployment tool would
+skip. One of those tools even commits the content it is given to the repository.
 
 The script needs `curl` and `jq`. If `jq` is missing the script says so and prints the install line —
 relay it and stop.
@@ -228,9 +228,7 @@ Inform the user if there are other deployments currently running. It is importan
 
 ---
 
-# What this skill cannot do
-
-Stop and say where it happens. Do not look for another way round.
+# What this skill does not do
 
 A new deployment does **not** become the project's main one, and this skill does not make it one. A new deployment operates in isolation and can never disrupt or interfere with an existing deployment. By contrast, promotion can be potentially destructive.
 
@@ -241,9 +239,6 @@ and do not go read that skill to find out how.
 | Request                                       | Where it happens                                   |
 | --------------------------------------------- | -------------------------------------------------- |
 | Make a deployment the project's main one      | the `promote` skill — tell the user, do not do it  |
-| Terminate, stop, start or resize a deployment | Web UI — deployment page                           |
-| Upgrade a deployment in place                 | Web UI (and only on installations that support it) |
-| Create, edit or delete a project              | Web UI — Add Project / project settings            |
-| Manage members, secrets or alert routing      | Web UI                                             |
+| Terminate, stop, start or resize a deployment, manage projects, members, secrets or alerts | the `cloud` skill, a separate request |
 | Diagnose a failing or unhealthy pipeline      | Web UI — **Troubleshoot**; that agent has the playbooks, this one does not |
-| Deploy uncommitted or unpushed code           | Not possible — deploy a pushed commit, or push it  |
+| Deploy uncommitted or unpushed code           | Not offered — the user commits and pushes it, then you deploy that commit |

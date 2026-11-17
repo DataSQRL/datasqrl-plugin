@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "datasqrl": {
+      "type": "stdio",
+      "command": "bash",
+      "args": ["scripts/datasqrl-cloud.sh", "mcp-bridge"],
+      "cwd": ".",
+      "env_vars": ["DATASQRL_BASE_URL", "XDG_CONFIG_HOME"]
+    }
+  }
+}

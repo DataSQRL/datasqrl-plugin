@@ -1,15 +1,14 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# DataSQRL Cloud API client for the `deploy` skill.
+# DataSQRL Cloud API client for the `deploy`, `promote` and `cloud` skills.
 #
 # Usage: ./datasqrl-cloud.sh <subcommand> [options...]
 #
-# The subcommand list below is the permission boundary. Every DataSQRL Cloud write this
-# script can perform is one of `deploy` or `promote`; terminate, stop, start, resize,
-# upgrade, and project/member/secret management have no subcommand and so cannot be
-# reached, whatever a prompt asks for. Adding one is a deliberate edit here, not a
-# decision an agent makes at run time.
+# The subcommands sign in, read deployments, deploy a commit and promote a deployment. Every
+# other DataSQRL Cloud operation, destructive ones included, is a tool of the MCP server at
+# <base URL>/api/mcp. `mcp-headers` and `mcp-bridge` give MCP clients this script's token, and
+# the `cloud` skill asks the user before it runs a tool that changes anything.
 #
 #   Auth
 #     login                     Device authorization flow. Prints a code and a URL for a
@@ -35,6 +34,12 @@
 #                               branch label is derived from the commit unless --branch says so.
 #     promote <id>              Make a deployment the project's main one.
 #
+#   MCP
+#     mcp-headers               Print {"Authorization":"Bearer <token>"} for an MCP client's
+#                               header helper.
+#     mcp-bridge                Relay MCP messages between stdin/stdout and <base URL>/api/mcp,
+#                               with a fresh token on every request.
+#
 # Common options: --org ID, --project ID, --base-url URL, --json, -h/--help.
 # Requires the commit to be on a remote branch; `deploy` warns when none contains it.
 #
@@ -55,6 +60,12 @@ WAIT_MAX_SECONDS=900
 
 # Refresh this far ahead of expiry so a slow request cannot straddle the boundary.
 REFRESH_SKEW_SECONDS=120
+
+# A refresh call gives up after REFRESH_MAX_SECONDS, so a lock folder older than
+# REFRESH_LOCK_STALE_SECONDS was left by a killed process. Both stay under Claude Code's 10s
+# header-helper timeout.
+REFRESH_MAX_SECONDS=5
+REFRESH_LOCK_STALE_SECONDS=8
 
 ORG_IDS_CLAIM="https://datasqrl.com/data_group_ids"
 
@@ -157,6 +168,7 @@ table() {
 
 CACHE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/datasqrl"
 CACHE_FILE="$CACHE_DIR/credentials.json"
+REFRESH_LOCK="$CACHE_DIR/.refresh.lock"
 
 # Tokens are keyed by host so a token minted against a preview deployment is never sent to
 # production. The 0600 below is a no-op on NTFS under Git Bash, so on Windows the cache is
@@ -182,12 +194,11 @@ write_cached() {
     local tmp
     tmp=$(mktemp "$CACHE_DIR/.credentials.XXXXXX") || die "cannot write to $CACHE_DIR"
     chmod 600 "$tmp"
-    printf '%s' "$existing" | jq \
+    # Tokens go through the environment: other local users can read argument lists with ps.
+    printf '%s' "$existing" | A="$access" R="$refresh" jq \
         --arg k "$(cache_key)" \
-        --arg a "$access" \
-        --arg r "$refresh" \
         --argjson e "$expires_at" \
-        '.[$k] = {access_token: $a, refresh_token: $r, expires_at: $e}' >"$tmp" \
+        '.[$k] = {access_token: env.A, refresh_token: env.R, expires_at: $e}' >"$tmp" \
         || { rm -f "$tmp"; die "failed to write the token cache"; }
     mv "$tmp" "$CACHE_FILE"
     chmod 600 "$CACHE_FILE"
@@ -211,17 +222,25 @@ decode_jwt_payload() {
 HTTP_STATUS=""
 HTTP_BODY=""
 request() {
-    local method="$1" url="$2" body="${3:-}"
+    local method="$1" url="$2" body="${3:-}" max_time="${4:-}"
     local -a curl_args=(-sS -X "$method" -w '\n%{http_code}' -H 'Accept: application/json')
-    [ -n "$ACCESS_TOKEN" ] && curl_args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
-    if [ -n "$body" ]; then
-        curl_args+=(-H 'Content-Type: application/json' --data-binary "$body")
-    fi
+    [ -n "$max_time" ] && curl_args+=(--max-time "$max_time")
+    [ -n "$body" ] && curl_args+=(-H 'Content-Type: application/json' --data-binary @-)
 
     local response
-    response=$(curl "${curl_args[@]}" "$url") || die "request to $url failed"
+    response=$(printf '%s' "$body" | curl "${curl_args[@]}" -K <(curl_secrets "$url")) \
+        || die "request to $url failed"
     HTTP_STATUS="${response##*$'\n'}"
     HTTP_BODY="${response%$'\n'*}"
+}
+
+# curl config for the URL (a device code rides in a query string) and the token, read through a
+# file descriptor: other local users can read curl's argument list with ps.
+curl_secrets() {
+    printf 'url = "%s"\n' "$1"
+    if [ -n "$ACCESS_TOKEN" ]; then
+        printf 'header = "Authorization: Bearer %s"\n' "$ACCESS_TOKEN"
+    fi
 }
 
 api_error_message() {
@@ -295,34 +314,97 @@ EOF
     die "timed out waiting for browser approval. Run login again."
 }
 
-# Populates ACCESS_TOKEN, refreshing when it is close to expiry. Every read and write goes
-# through this.
-load_token() {
+# Auth0 rotates the refresh token on use, so two processes refreshing at once (an MCP client's
+# header helper and a skill) would spend the same token and sign the user out.
+REFRESH_LOCK_OWNER=""
+
+acquire_refresh_lock() {
+    mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
+    local age
+    while :; do
+        # Ends with the creation time, which lock_age_seconds reads.
+        REFRESH_LOCK_OWNER="$$.$RANDOM.$(date +%s)"
+        # noclobber creates the file with O_EXCL. Not `mkdir`: uutils coreutils (Ubuntu 26.04)
+        # lets two concurrent calls both succeed.
+        ( set -C; printf '%s' "$REFRESH_LOCK_OWNER" >"$REFRESH_LOCK" ) 2>/dev/null && break
+        age=$(lock_age_seconds) || continue
+        if [ "$age" -ge "$REFRESH_LOCK_STALE_SECONDS" ]; then
+            echo "Removing a token refresh lock left ${age}s ago by a stopped process." >&2
+            rm -f "$REFRESH_LOCK"
+            continue
+        fi
+        sleep 0.2
+    done
+    trap release_refresh_lock EXIT
+}
+
+# Leaves a lock alone once another process has taken it over as stale.
+release_refresh_lock() {
+    if [ -n "$REFRESH_LOCK_OWNER" ] \
+        && [ "$(cat "$REFRESH_LOCK" 2>/dev/null)" = "$REFRESH_LOCK_OWNER" ]; then
+        rm -f "$REFRESH_LOCK"
+    fi
+    REFRESH_LOCK_OWNER=""
+    trap - EXIT
+}
+
+# The lock's own time comes from the same clock as `date`; the file's mtime is the fallback for a
+# holder killed between creating the file and writing it.
+lock_age_seconds() {
+    local created
+    created=$(cat "$REFRESH_LOCK" 2>/dev/null) || return 1
+    created="${created##*.}"
+    case "$created" in
+        ''|*[!0-9]*)
+            created=$(stat -c %Y "$REFRESH_LOCK" 2>/dev/null || stat -f %m "$REFRESH_LOCK" 2>/dev/null) \
+                || return 1 ;;
+    esac
+    echo $(( $(date +%s) - created ))
+}
+
+token_is_fresh() {
     local expires_at
+    expires_at=$(read_cached expires_at || echo 0)
+    [ "$(( expires_at - REFRESH_SKEW_SECONDS ))" -gt "$(date +%s)" ]
+}
+
+# Populates ACCESS_TOKEN, refreshing when it is close to expiry, or always with `force` (the
+# server rejected it). Every read and write goes through this.
+load_token() {
     ACCESS_TOKEN=$(read_cached access_token) \
         || die "not authenticated for $(cache_key). Run: $0 login"
-    expires_at=$(read_cached expires_at || echo 0)
-
-    if [ "$(( expires_at - REFRESH_SKEW_SECONDS ))" -le "$(date +%s)" ]; then
-        local refresh_token
-        refresh_token=$(read_cached refresh_token) \
-            || die "the access token expired and no refresh token is cached. Run: $0 login"
-
-        # Cleared so the refresh call is unauthenticated; an expired bearer would 401 it.
-        ACCESS_TOKEN=""
-        request POST "$BASE_URL/auth/device/token/refresh" \
-            "$(jq -nc --arg t "$refresh_token" '{refresh_token: $t}')"
-        [ "${HTTP_STATUS:0:1}" = "2" ] \
-            || die "could not refresh the access token ($(api_error_message)). Run: $0 login"
-
-        # Auth0 rotates the refresh token, so both values must be stored or the next
-        # refresh fails with an already-used token.
-        write_cached \
-            "$(printf '%s' "$HTTP_BODY" | jq -r '.access_token')" \
-            "$(printf '%s' "$HTTP_BODY" | jq -r '.refresh_token')" \
-            "$(printf '%s' "$HTTP_BODY" | jq -r '.expires_in')"
-        ACCESS_TOKEN=$(read_cached access_token)
+    if [ "${1:-}" != force ] && token_is_fresh; then
+        return 0
     fi
+
+    local rejected="$ACCESS_TOKEN"
+    acquire_refresh_lock
+    ACCESS_TOKEN=$(read_cached access_token) \
+        || die "not authenticated for $(cache_key). Run: $0 login"
+    # Another process refreshed while this one waited for the lock.
+    if [ "$ACCESS_TOKEN" != "$rejected" ] && token_is_fresh; then
+        release_refresh_lock
+        return 0
+    fi
+
+    local refresh_token
+    refresh_token=$(read_cached refresh_token) \
+        || die "the access token expired and no refresh token is cached. Run: $0 login"
+
+    # Cleared so the refresh call is unauthenticated; an expired bearer would 401 it.
+    ACCESS_TOKEN=""
+    request POST "$BASE_URL/auth/device/token/refresh" \
+        "$(T="$refresh_token" jq -nc '{refresh_token: env.T}')" "$REFRESH_MAX_SECONDS"
+    [ "${HTTP_STATUS:0:1}" = "2" ] \
+        || die "could not refresh the access token ($(api_error_message)). Run: $0 login"
+
+    # Both values must be stored or the next refresh fails with an already-used token.
+    write_cached \
+        "$(printf '%s' "$HTTP_BODY" | jq -r '.access_token')" \
+        "$(printf '%s' "$HTTP_BODY" | jq -r '.refresh_token')" \
+        "$(printf '%s' "$HTTP_BODY" | jq -r '.expires_in')"
+    ACCESS_TOKEN=$(read_cached access_token)
+    release_refresh_lock
 }
 
 do_whoami() {
@@ -771,9 +853,94 @@ cmd_promote() {
     report_deployment "$DEPLOYMENT_ID"
 }
 
+# --- MCP ---------------------------------------------------------------------------------------
+
+cmd_mcp_headers() {
+    # Claude Code passes the server URL; deriving the host from it keeps the token on its own host.
+    if [ -n "${CLAUDE_CODE_MCP_SERVER_URL:-}" ]; then
+        BASE_URL="${CLAUDE_CODE_MCP_SERVER_URL%/}"
+        BASE_URL="${BASE_URL%/api/mcp}"
+    fi
+    load_token
+    T="$ACCESS_TOKEN" jq -nc '{Authorization: ("Bearer " + env.T)}'
+}
+
+MCP_PROTOCOL_VERSION=""
+BRIDGE_ERROR=""
+
+# Runs load_token in a subshell so a sign-in problem becomes a JSON-RPC error instead of an exit.
+bridge_load_token() {
+    local out
+    out=$( (load_token "$@" && printf '\nTOKEN:%s' "$ACCESS_TOKEN") 2>&1 )
+    case "$out" in
+        *$'\nTOKEN:'*) ACCESS_TOKEN="${out##*$'\n'TOKEN:}" ;;
+        *) BRIDGE_ERROR="${out#Error: }"; return 1 ;;
+    esac
+}
+
+# Like request(), but a network failure or timeout sets HTTP_STATUS=000 instead of exiting. The
+# bridge handles one message at a time, so a hung call would block every later one.
+mcp_post() {
+    local -a curl_args=(-sS -X POST -w '\n%{http_code}' --connect-timeout 10 --max-time 300
+        -H 'Content-Type: application/json'
+        -H 'Accept: application/json, text/event-stream'
+        --data-binary @-)
+    [ -n "$MCP_PROTOCOL_VERSION" ] && curl_args+=(-H "MCP-Protocol-Version: $MCP_PROTOCOL_VERSION")
+
+    local response
+    response=$(printf '%s' "$1" | curl "${curl_args[@]}" -K <(curl_secrets "$BASE_URL/api/mcp") 2>/dev/null) \
+        || response=$'\n000'
+    HTTP_STATUS="${response##*$'\n'}"
+    HTTP_BODY="${response%$'\n'*}"
+}
+
+mcp_error_reply() {
+    jq -nc --argjson id "$1" --arg m "$2" '{jsonrpc: "2.0", id: $id, error: {code: -32000, message: $m}}'
+}
+
+# Stdio MCP is one JSON-RPC message per line. The server is stateless and answers with JSON, so
+# each message is one POST.
+cmd_mcp_bridge() {
+    local line id method reply
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] || continue
+        # A notification has no id and gets no reply, even when it fails.
+        id=$(printf '%s' "$line" | jq -c 'if type == "object" and has("id") then .id else empty end' 2>/dev/null)
+        method=$(printf '%s' "$line" | jq -r '.method? // empty' 2>/dev/null)
+
+        HTTP_STATUS=""
+        if bridge_load_token; then
+            mcp_post "$line"
+            if [ "$HTTP_STATUS" = 401 ]; then
+                if bridge_load_token force; then mcp_post "$line"; else HTTP_STATUS=""; fi
+            fi
+        fi
+
+        reply=""
+        if [ -n "$HTTP_BODY" ] && [ -n "$HTTP_STATUS" ] && [ "$HTTP_STATUS" != 000 ]; then
+            reply=$(printf '%s' "$HTTP_BODY" | jq -c 'select(type == "object" and has("jsonrpc"))' 2>/dev/null)
+        fi
+        if [ -n "$reply" ]; then
+            if [ "$method" = initialize ]; then
+                MCP_PROTOCOL_VERSION=$(printf '%s' "$reply" | jq -r '.result.protocolVersion // empty')
+            fi
+            printf '%s\n' "$reply"
+            continue
+        fi
+
+        [ -n "$id" ] || continue
+        case "$HTTP_STATUS" in
+            "") mcp_error_reply "$id" "$BRIDGE_ERROR" ;;
+            000) mcp_error_reply "$id" "cannot reach $BASE_URL/api/mcp" ;;
+            2*) mcp_error_reply "$id" "unreadable response from $BASE_URL/api/mcp" ;;
+            *) mcp_error_reply "$id" "HTTP $HTTP_STATUS from $BASE_URL/api/mcp: $(api_error_message)" ;;
+        esac
+    done
+}
+
 usage() {
     awk 'NR > 2 && /^#/ { sub(/^# ?/, ""); print; next } NR > 2 { exit }' "$SELF" 2>/dev/null \
-        || echo "Usage: datasqrl-cloud.sh <login|whoami|logout|orgs|projects|project-id|deployments|deployment|status|details|logs|find-commit|wait|deploy|promote>"
+        || echo "Usage: datasqrl-cloud.sh <login|whoami|logout|orgs|projects|project-id|deployments|deployment|status|details|logs|find-commit|wait|deploy|promote|mcp-headers|mcp-bridge>"
 }
 
 # `dispatch; exit $?` must stay one command list: bash reads this file incrementally, so editing
@@ -799,6 +966,8 @@ dispatch() {
         wait) cmd_wait ;;
         deploy) cmd_deploy ;;
         promote) cmd_promote ;;
+        mcp-headers) cmd_mcp_headers ;;
+        mcp-bridge) cmd_mcp_bridge ;;
         help|"") usage ;;
         *)
             echo "Error: unknown subcommand '$SUBCOMMAND'." >&2

@@ -43,7 +43,7 @@ else
 fi
 
 # 2. Manifests: each host reads its own, so each must parse, and all must carry one version.
-manifests=(.claude-plugin/marketplace.json .claude-plugin/plugin.json .codex-plugin/plugin.json .cursor-plugin/plugin.json)
+manifests=(.claude-plugin/marketplace.json .claude-plugin/plugin.json .codex-plugin/plugin.json .cursor-plugin/plugin.json mcp.json)
 for m in "${manifests[@]}"; do
     [ -f "$m" ] || { fail "$m is missing"; continue; }
     python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$m" || fail "$m is not valid JSON"
@@ -82,7 +82,37 @@ if grep -rn '<!--' skills/; then
     fail "an HTML comment is in skills/; move maintainer notes to CONTRIBUTING.md"
 fi
 
-# 6. Release only: the tag is the manifest version, plain SemVer with no "v" prefix.
+# 6. MCP: each host declares the datasqrl server and gets its token from the cloud script. Codex
+#    loads the server only through the manifest's mcpServers path.
+python3 - <<'EOF' || fail "an MCP server declaration is missing or broken"
+import json, os, sys
+
+def server(path, mcp_servers):
+    entry = mcp_servers.get("datasqrl") if isinstance(mcp_servers, dict) else None
+    if not entry:
+        problems.append(f"{path}: no datasqrl MCP server")
+    return entry or {}
+
+problems = []
+claude = server(".claude-plugin/plugin.json", json.load(open(".claude-plugin/plugin.json")).get("mcpServers"))
+if "mcp-headers" not in claude.get("headersHelper", ""):
+    problems.append(".claude-plugin/plugin.json: datasqrl needs a headersHelper that runs mcp-headers")
+codex_file = json.load(open(".codex-plugin/plugin.json")).get("mcpServers")
+if not isinstance(codex_file, str) or not os.path.isfile(codex_file):
+    problems.append(".codex-plugin/plugin.json: mcpServers must name an existing file")
+else:
+    codex = server(codex_file, json.load(open(codex_file)).get("mcpServers"))
+    if codex.get("args", [])[-1:] != ["mcp-bridge"]:
+        problems.append(f"{codex_file}: datasqrl must run mcp-bridge")
+cursor = server(".cursor-plugin/plugin.json", json.load(open(".cursor-plugin/plugin.json")).get("mcpServers"))
+if cursor.get("args", [])[-1:] != ["mcp-bridge"]:
+    problems.append(".cursor-plugin/plugin.json: datasqrl must run mcp-bridge")
+for p in problems:
+    print("  " + p, file=sys.stderr)
+sys.exit(1 if problems else 0)
+EOF
+
+# 7. Release only: the tag is the manifest version, plain SemVer with no "v" prefix.
 if [ -n "$TAG" ] && [ "$TAG" != "$VERSION" ]; then
     fail "tag $TAG does not match the manifest version $VERSION (expected $VERSION)"
 fi

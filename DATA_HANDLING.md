@@ -7,7 +7,7 @@ This page states what the DataSQRL plugin reads, where data goes, and what stays
 - The plugin has no telemetry of its own. Its skills are instructions for your coding agent, and they send data only through the two scripts in `scripts/`.
 - The DataSQRL Code Agent runs in a Docker container on your machine. It sends your prompts and project code to the model provider you choose, and to nothing else unless you opt in.
 - Telemetry is off by default. With `DATASQRL_TELEMETRY=1`, the run log is uploaded to DataSQRL for troubleshooting.
-- `deploy` and `promote` talk to DataSQRL Cloud, and only when you ask for them.
+- `deploy`, `promote` and the DataSQRL Cloud MCP tools talk to DataSQRL Cloud. Once you are signed in, your coding agent also connects to the MCP server when a session starts, to list the tools. The skills tell your coding agent to ask you before a tool that changes anything; outside the skills, the agent's own permission settings decide whether it asks.
 
 Your coding agent (Claude Code, Codex, Cursor or Copilot) has its own data policy, which this page does not cover.
 
@@ -53,7 +53,7 @@ Everything else in your shell stays outside the container.
 - **Claude login.** Without `ANTHROPIC_API_KEY`, the launcher uses `CLAUDE_CODE_OAUTH_TOKEN`, then `~/.claude/.credentials.json`, then on macOS the Claude Code entry in the Keychain. A token from the variable or the Keychain is written to a temporary file that only your user can read and is mounted read-only. For an attached run the file is deleted when the launcher exits. For a detached run it stays at `${TMPDIR:-/tmp}/datasqrl-agent-creds-<run>.json`, because the container still needs it, and the next run on the same project overwrites it.
 - **AWS profile.** For a Bedrock run or an opted-in log upload, `AWS_PROFILE` is turned into one temporary credential on your host and passed in as variables. `~/.aws` is never mounted.
 - **Pro edition login.** A pro pull uses `DATASQRL_PRO_TOKEN` when it is set. The launcher sends the token to `api.github.com` to look up its account and to `ghcr.io` for `docker login`. It passes the token on stdin, and the token stays outside the agent container. Without the token, the launcher reads the ghcr.io login that `docker login ghcr.io` stored. It asks the credential helper that your Docker config names, such as `docker-credential-desktop`, for the `ghcr.io` entry only, or it reads the inline `auths` entry in `config.json`. It never asks for another registry, and it never prints the login. Log in to `ghcr.io` with a token that has only the `read:packages` scope, because the signature check receives the whole stored token. The signature check after a pro pull also needs the login. For that check, the launcher writes it as a Docker login to a file that only your user can read. The file is in a folder under `${XDG_STATE_HOME:-~/.local/state}/datasqrl-agent`. The launcher mounts that folder read-only into the `cosign` container, which reads the pro signature from `ghcr.io`. The launcher deletes the folder when the check ends. If the launcher stops during the check, for example after Ctrl-C, it deletes the folder before it exits. Each check deletes only its own folder.
-- **DataSQRL Cloud.** `scripts/datasqrl-cloud.sh` signs in with a device-code flow that you approve in a browser. It caches the token in `${XDG_CONFIG_HOME:-~/.config}/datasqrl/credentials.json` with mode `0600`; on Windows NTFS that mode has no effect. `datasqrl-cloud.sh logout` deletes it.
+- **DataSQRL Cloud.** `scripts/datasqrl-cloud.sh` signs in with a device-code flow that you approve in a browser. It caches the token in `${XDG_CONFIG_HOME:-~/.config}/datasqrl/credentials.json` with mode `0600`; on Windows NTFS that mode has no effect. `datasqrl-cloud.sh logout` deletes it. The MCP connection (`mcp-headers` in Claude Code, `mcp-bridge` in Codex and Cursor) reads the same cache and sends a token only to the host it was issued for.
 
 ## Network destinations
 
@@ -65,7 +65,7 @@ Everything else in your shell stays outside the container.
 | Sigstore (`sigstore.dev`) | The signature check after each pull | Requests for Sigstore's public trust data; nothing about you or your project |
 | Your MCP server | Only when `MCP_SERVER_URL` is set | What the agent sends to its tools |
 | `s3://datasqrl-debug-logs` | Only with `DATASQRL_TELEMETRY=1` | The run log (see below) |
-| `cloud.datasqrl.com`, or `DATASQRL_BASE_URL` | Only `deploy` and `promote` | Sign-in, and the commit, project and deployment ids of the action you asked for |
+| `cloud.datasqrl.com`, or `DATASQRL_BASE_URL` | `deploy`, `promote`, and the MCP tools once you are signed in | Sign-in; the commit, project and deployment ids of a deploy or promote; at session start, a request for the tool list; the inputs of each tool call |
 | `api.github.com` or `gh` | Only `resolve-issue` | A request to read the issue you named |
 
 ## Telemetry
