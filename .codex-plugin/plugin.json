@@ -1,7 +1,7 @@
 {
   "name": "datasqrl",
-  "version": "0.4.0",
-  "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
+  "version": "0.4.1",
+  "description": "Agentic data engineering for operational data: plan, build, and verify real-time pipelines, data APIs, and data products with DataSQRL.",
   "author": {
     "name": "DataSQRL",
     "email": "contact@datasqrl.com",
@@ -16,13 +16,20 @@
     "data-pipelines",
     "streaming",
     "flink",
-    "graphql"
+    "graphql",
+    "operational-data",
+    "real-time",
+    "kafka",
+    "iceberg",
+    "data-api",
+    "mcp",
+    "data-products"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "DataSQRL",
-    "shortDescription": "Plan, build and deploy DataSQRL data pipelines",
-    "longDescription": "Describe a data pipeline in plain English. The plugin turns it into a requirements document, runs the Dockerized DataSQRL Code Agent to plan it, waits for your review, then implements, compiles, tests and verifies it. Small changes to an existing project go straight to a patch run, and finished projects deploy to DataSQRL Cloud.",
+    "shortDescription": "Build and verify operational data pipelines, APIs, and data products",
+    "longDescription": "DataSQRL is an open-source harness for agentic data engineering on operational data: agents build real-time pipelines, data APIs, and data products; a compiler verifies them. Describe a data pipeline in plain English. The plugin turns it into a requirements document, runs the Dockerized DataSQRL agent to plan it, waits for your review, then implements, compiles, tests and verifies it. Small changes to an existing project go straight to a patch run, and finished projects deploy to DataSQRL Cloud.",
     "developerName": "DataSQRL",
     "category": "Developer Tools",
     "capabilities": [
@@ -32,7 +39,7 @@
     ],
     "websiteURL": "https://datasqrl.com",
     "defaultPrompt": [
-      "I want a pipeline that ingests our order events and reports daily revenue.",
+      "Ingest order events from Kafka, enrich them with customer data, and serve each customer's orders through a GraphQL API.",
       "Plan a DataSQRL pipeline from my requirements document.",
       "Is my DataSQRL run still going?"
     ]

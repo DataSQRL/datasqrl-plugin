@@ -1,22 +1,33 @@
-# DataSQRL for coding agents
+# DataSQRL Plugin for Coding Agents
 
-Build [DataSQRL](https://datasqrl.com) data pipelines from your coding agent, using the Dockerized
-**DataSQRL Code Agent**.
+**Agentic data engineering for operational data.** Real-time pipelines, data APIs, and data products on Kafka, Flink, Postgres, and Iceberg. Built by your coding agent, verified by a compiler.
 
-Installs as a plugin in **Claude Code**, **Codex**, **Cursor** and the **GitHub Copilot CLI**.
-For other GitHub Copilot clients, an installer copies the skills into your repository.
+[DataSQRL](https://datasqrl.com) is an open-source harness for agentic data engineering on operational data: agents build real-time pipelines, data APIs, and data products; a compiler verifies them.
+
+The DataSQRL plugin installs that harness into **Claude Code**, **Codex**, **Cursor** and the **GitHub Copilot CLI**, and runs the Dockerized **DataSQRL agent** from there. For other GitHub Copilot clients, an installer copies the skills into your repository.
+
+## When to use it
+
+Use DataSQRL when:
+
+- You need a data API (GraphQL, REST, or MCP) over operational data.
+- You build an operational data product with data quality and observability.
+- Kafka is in the pipeline, as source, sink, or both.
+- Results are needed in seconds or minutes, not after the next batch run.
+- An application, a customer, or an AI agent consumes the output, not only a dashboard.
+- You are capturing changes from operational systems into data streams or data lakes.
+
+It is not the fit when the work is dbt models on a schedule inside Snowflake, BigQuery, or Databricks. DataSQRL does build the operational pipelines that land in the data lake or warehouse, for example CDC streams enriched and written to Iceberg, with views for each query engine. For models inside the warehouse, keep using dbt. [How DataSQRL Compares](https://docs.datasqrl.com/docs/intro/comparison) has the full comparison.
 
 ## What it does
 
-You describe what you want in plain English. Your agent turns that into a proper requirements
-document, hands it to the containerized DataSQRL agent to plan, waits for you to review the plan,
-then runs the autonomous implement → compile → test → verify → refine loop.
+You describe what you want in plain English. Your agent turns that into a proper requirements document, hands it to the containerized DataSQRL agent to plan, waits for you to review the plan, then runs the autonomous implement → compile → test → verify → refine loop.
 
-For a small change to a project that already exists, that whole workflow is overkill — `patch`
-sends the request straight to the implementing agent instead.
+The output feeds live applications, customers, and AI agents, so the DataSQRL agent verifies it before it is deployed. A wrong operational pipeline has already served bad data by the time someone notices, and a rerun does not undo that.
 
-Your agent never writes SQRL itself — the container has the compiler, the DataSQRL skill library,
-the test runner and the reviewing judges.
+For a small change to a project that already exists, that whole workflow is overkill — `patch` sends the request straight to the implementing agent instead.
+
+Your agent never writes SQRL itself — the container has the compiler, the DataSQRL skill library, the test runner and the reviewing judges.
 
 | Skill | Claude Code | What it does |
 |-------|-------------|--------------|
@@ -31,21 +42,13 @@ the test runner and the reviewing judges.
 | `promote` | `/datasqrl:promote` | Makes an existing deployment the project's main one, after showing you which one it replaces. |
 | `cloud` | `/datasqrl:cloud` | Everything else in DataSQRL Cloud — alerts, metrics, projects, secrets, members, terminating or resizing a deployment — through the DataSQRL Cloud MCP tools. Asks you before any change. |
 
-`deploy` is a separate step you ask for, not the tail of an implementation run. It deploys a
-commit from GitHub rather than your working tree, so the work has to be committed and pushed
-first, and signing in needs you to approve a browser prompt once per session.
+`deploy` is a separate step you ask for, not the tail of an implementation run. It deploys a commit from GitHub rather than your working tree, so the work has to be committed and pushed first, and signing in needs you to approve a browser prompt once per session.
 
 ### DataSQRL Cloud tools (MCP)
 
-The plugin connects your agent to the DataSQRL Cloud MCP server, which serves every operation of
-the DataSQRL Cloud API as a tool. New operations show up without a plugin update. Sign in once
-(`deploy` or `cloud` asks you to), and the tools keep working as the token refreshes.
+The plugin connects your agent to the DataSQRL Cloud MCP server, which serves every operation of the DataSQRL Cloud API as a tool. New operations show up without a plugin update. Sign in once (`deploy` or `cloud` asks you to), and the tools keep working as the token refreshes.
 
-The server marks tools that delete or replace something as destructive, but creating a project or a
-secret changes things too. The skills tell your agent to ask you before any tool that changes
-something. Whether the agent itself prompts depends on its permission settings: Claude Code in auto
-mode, for one, runs a tool without a prompt. In Claude Code, `runDeploymentAction` is one tool for
-promote, stop, resize and terminate, so "always allow" on one promote also allows terminate. Set `DATASQRL_BASE_URL` to point the plugin at another DataSQRL Cloud host.
+The server marks tools that delete or replace something as destructive, but creating a project or a secret changes things too. The skills tell your agent to ask you before any tool that changes something. Whether the agent itself prompts depends on its permission settings: Claude Code in auto mode, for one, runs a tool without a prompt. In Claude Code, `runDeploymentAction` is one tool for promote, stop, resize and terminate, so "always allow" on one promote also allows terminate. Set `DATASQRL_BASE_URL` to point the plugin at another DataSQRL Cloud host.
 
 | Agent | How it connects |
 |-------|-----------------|
@@ -54,69 +57,49 @@ promote, stop, resize and terminate, so "always allow" on one promote also allow
 | Cursor | The same bridge. Not yet tested on Cursor; report problems as issues. |
 | GitHub Copilot | Not connected; use the Web UI for what `deploy` and `promote` do not cover |
 
-`promote` is deliberately separate from `deploy`, and never chained onto it. Deploying adds a new
-deployment and changes nothing about which one is main; promoting changes what the project serves.
-So the second is always its own request, made after you have seen the first one succeed.
+`promote` is deliberately separate from `deploy`, and never chained onto it. Deploying adds a new deployment and changes nothing about which one is main; promoting changes what the project serves. So the second is always its own request, made after you have seen the first one succeed.
 
-You rarely type any of these. Say *"I want a pipeline that ingests our order webhooks and reports
-daily revenue"* and the workflow starts on its own.
+You rarely type any of these. Say *"Ingest order events from Kafka, enrich them with customer data, and serve each customer's orders through a GraphQL API"* and the workflow starts on its own.
 
 ## Runs are detached
 
-An implementation run takes 30–60+ minutes, far longer than a coding agent may hold a foreground
-command open. Runs are therefore started **detached** and the launch returns in about two seconds.
-The run belongs to the Docker daemon, not to your session, which means:
+An implementation run takes 30–60+ minutes, far longer than a coding agent may hold a foreground command open. Runs are therefore started **detached** and the launch returns in about two seconds. The run belongs to the Docker daemon, not to your session, which means:
 
-- **Close the session, interrupt your agent, reboot your editor** — the run finishes anyway and
-  still writes `.datasqrl_agent_results.json`.
+- **Close the session, interrupt your agent, reboot your editor** — the run finishes anyway and still writes `.datasqrl_agent_results.json`.
 - **You follow it from another terminal.** The launch prints the command, `tail -f` on the run's progress log, that shows what the agent is doing as it happens. Ask your agent whether it is still going, what the output means, or to stop it (`progress`).
 - **Your agent learns when it ends.** Right after the launch, the agent starts `datasqrl-agent.sh --wait` in the background. That command waits for the run and prints the result when the run ends, so the agent reports back on its own. You can still ask at any time (`progress`).
 - **`progress` works from anywhere** — a different session, hours later, on a run you did not start.
-- **One run at a time per project.** A second implement on the same project is refused while the
-  first is going, so two agents can never interleave edits to the same files. Different projects
-  run in parallel fine.
+- **One run at a time per project.** A second implement on the same project is refused while the first is going, so two agents can never interleave edits to the same files. Different projects run in parallel fine.
 
 ## Requirements
 
-- **Docker**, running locally. The agent image is fetched and tagged automatically on first use,
-  with no manual `docker pull` or `docker tag`. It is the open-source edition, which anyone can
-  pull. Every pro pull needs a ghcr.io login from a GitHub account with pro access. There are two
-  ways to give it:
-  - **Your own GitHub account.** If DataSQRL has given your account access to the pro edition, run
-    `docker login ghcr.io` once with a personal access token (classic) that has the
-    `read:packages` scope. The launcher uses the login that Docker stored. For the first pull,
-    select pro with `DATASQRL_AGENT_EDITION=pro datasqrl-agent.sh --pull-image`. After that, the
-    local pro image selects pro on every run.
-  - **A token from DataSQRL.** Set `DATASQRL_PRO_TOKEN` in the shell that starts your coding agent
-    to the token DataSQRL gave you. The launcher then logs in and pulls pro. The token wins over a
-    stored login. Set it in your shell profile, such as `~/.zshrc`, not in the chat with your
-    coding agent.
+The plugin runs one of two DataSQRL agents. Each one is a Docker image, and each one is an edition of the plugin:
+
+| Agent | Edition | What it is | Image |
+| --- | --- | --- | --- |
+| advanced agent | open-source edition | Open source. A coding agent inside the DataSQRL harness, with the verifiers, judges, and implementation loops that implement, compile, test, verify, and refine a pipeline until it passes. | `ghcr.io/datasqrl/adv-agent` |
+| pro agent | pro edition | The commercial offering, which is not open source: the advanced agent plus enterprise features. DataSQRL decides who can pull it. | `ghcr.io/datasqrl/pro-agent` |
+
+The plugin runs the advanced agent by default, and the pro agent when you have pro access.
+
+- **Docker**, running locally. The agent image is fetched and tagged automatically on first use, with no manual `docker pull` or `docker tag`. It is the open-source edition (the advanced agent), which anyone can pull. Every pro pull needs a ghcr.io login from a GitHub account with pro access. There are two ways to give it:
+  - **Your own GitHub account.** If DataSQRL has given your account access to the pro edition, run `docker login ghcr.io` once with a personal access token (classic) that has the `read:packages` scope. The launcher uses the login that Docker stored. For the first pull, select pro with `DATASQRL_AGENT_EDITION=pro datasqrl-agent.sh --pull-image`. After that, the local pro image selects pro on every run.
+  - **A token from DataSQRL.** Set `DATASQRL_PRO_TOKEN` in the shell that starts your coding agent to the token DataSQRL gave you. The launcher then logs in and pulls pro. The token wins over a stored login. Set it in your shell profile, such as `~/.zshrc`, not in the chat with your coding agent.
 - **Signed images.** After each pull, the launcher checks that DataSQRL's release workflow signed the image. It runs only an image that it checked on your machine, and it deletes an image without a valid signature. After a network error, it keeps the image, so the next try needs no new download. The check runs the `cosign` tool in Docker, so you install nothing. The launcher pulls the `cosign` image, about 60MB, before the first agent image. It needs network access to Sigstore (`sigstore.dev`) and to `ghcr.io`.
 - A **model provider credential**: `ANTHROPIC_API_KEY` for the default provider, or the variables of the provider you choose, such as `FIREWORKS_API_KEY` or an AWS profile for Amazon Bedrock. Set them in the shell that starts your coding agent, not in the chat with it. `datasqrl-agent.sh --show-options` lists the providers and what each needs, and `datasqrl-agent.sh --check-config` tells you whether a run is ready. Your coding agent runs both for you during setup; [`skills/start/reference/agent-setup.md`](skills/start/reference/agent-setup.md) explains them.
 - **AWS credentials only for Amazon Bedrock.** The run log stays in your project. Telemetry is off by default; opt in with `DATASQRL_TELEMETRY=1` and AWS keys, which shares it with DataSQRL for troubleshooting and debugging.
-- A **git repository**. The repo is mounted read-only so the agent can discover sibling projects
-  and shared data catalogs, and your project is the only writable place.
-- **A bash shell.** Every skill shells out to one of the `scripts/*.sh`, so on Windows use
-  **WSL**, which is the tested path. Git Bash runs `datasqrl-cloud.sh` but is **not** enough for
-  the containerized agent: MSYS rewrites the `-v <host>:/workspace` mount arguments in
-  `datasqrl-agent.sh`, and `git rev-parse --show-toplevel` yields `/c/Users/…` where Docker Desktop
-  wants `C:/Users/…`.
+- A **git repository**. The repo is mounted read-only so the agent can discover sibling projects and shared data catalogs, and your project is the only writable place.
+- **A bash shell.** Every skill shells out to one of the `scripts/*.sh`, so on Windows use **WSL**, which is the tested path. Git Bash runs `datasqrl-cloud.sh` but is **not** enough for the containerized agent: MSYS rewrites the `-v <host>:/workspace` mount arguments in `datasqrl-agent.sh`, and `git rev-parse --show-toplevel` yields `/c/Users/…` where Docker Desktop wants `C:/Users/…`.
 
 For `resolve-issue` only:
 
-- **`gh`**, signed in (`gh auth login`), to read the issue. A public repository's issue also
-  reads with `curl` and `jq`.
+- **`gh`**, signed in (`gh auth login`), to read the issue. A public repository's issue also reads with `curl` and `jq`.
 
 For `deploy` and `promote` only:
 
-- **`curl` and `jq`** on your PATH. Git Bash ships `curl` but not `jq`: `winget install jq`.
-  On NTFS the token cache cannot be permission-restricted, so it is only as private as your user
-  profile directory.
-- A **DataSQRL Cloud account** with the Member or Owner role in the organization, and the project
-  already created there (Add Project links it to a GitHub repository).
-- A **browser**, to approve the sign-in. Tokens are cached under
-  `${XDG_CONFIG_HOME:-~/.config}/datasqrl/credentials.json` and refresh themselves, so this is at
-  most once per session.
+- **`curl` and `jq`** on your PATH. Git Bash ships `curl` but not `jq`: `winget install jq`. On NTFS the token cache cannot be permission-restricted, so it is only as private as your user profile directory.
+- A **DataSQRL Cloud account** with the Member or Owner role in the organization, and the project already created there (Add Project links it to a GitHub repository).
+- A **browser**, to approve the sign-in. Tokens are cached under `${XDG_CONFIG_HOME:-~/.config}/datasqrl/credentials.json` and refresh themselves, so this is at most once per session.
 
 ## Install
 
@@ -169,17 +152,14 @@ copilot plugin install datasqrl@datasqrl
 
 #### Other Copilot clients
 
-These clients read skills from directories inside the repository you work in. Clone this repo and
-run the installer against your project:
+These clients read skills from directories inside the repository you work in. Clone this repo and run the installer against your project:
 
 ```bash
 git clone https://github.com/DataSQRL/datasqrl-plugin
 ./datasqrl-plugin/install-skills.sh /path/to/your/repo
 ```
 
-That copies the skills into `.github/skills/` and `.agents/skills/`. The skills invoke
-`datasqrl-agent.sh` by name, so it must be on your `PATH`. Every release attaches the launcher, and
-this installs the latest one:
+That copies the skills into `.github/skills/` and `.agents/skills/`. The skills invoke `datasqrl-agent.sh` by name, so it must be on your `PATH`. Every release attaches the launcher, and this installs the latest one:
 
 ```bash
 curl -fsSL https://github.com/DataSQRL/datasqrl-plugin/releases/latest/download/datasqrl-agent.sh \
@@ -195,24 +175,15 @@ Claude Code third-party marketplaces don't auto-update by default:
 /reload-plugins
 ```
 
-No re-add or reinstall needed. Copilot CLI users run `copilot plugin update datasqrl`. Other
-Copilot users pull this repository, re-run `install-skills.sh`, and download the launcher again.
-[Releases](https://github.com/DataSQRL/datasqrl-plugin/releases) lists what changed in each
-version.
+No re-add or reinstall needed. Copilot CLI users run `copilot plugin update datasqrl`. Other Copilot users pull this repository, re-run `install-skills.sh`, and download the launcher again. [Releases](https://github.com/DataSQRL/datasqrl-plugin/releases) lists what changed in each version.
 
 ## Data handling and telemetry
 
-The plugin has no telemetry of its own, and the agent's telemetry is off by default. A run sends
-your prompts and project code to the model provider you choose; `deploy` and `promote` talk to
-DataSQRL Cloud.
-[DATA_HANDLING.md](DATA_HANDLING.md) lists what runs where, which credentials are read, and what
-leaves your machine.
+The plugin has no telemetry of its own, and the agent's telemetry is off by default. A run sends your prompts and project code to the model provider you choose; `deploy` and `promote` talk to DataSQRL Cloud. [DATA_HANDLING.md](DATA_HANDLING.md) lists what runs where, which credentials are read, and what leaves your machine.
 
 ## Contributing
 
-Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to test a
-change locally and the checks CI runs.
-Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to test a change locally and the checks CI runs. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

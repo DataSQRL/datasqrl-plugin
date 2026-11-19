@@ -1,10 +1,10 @@
 ---
 name: plan
-description: Use when DataSQRL requirements exist and the next step is a plan, or when the user asks to plan a DataSQRL pipeline or data catalog. Runs the DataSQRL Code Agent in planning mode over a requirements document or a requirements string, producing a reviewable, checkbox-tracked adr/plan_<ts>.md. Takes an optional path to a requirements .md, or inline requirements text.
+description: Use when DataSQRL requirements exist and the next step is a plan, or when the user asks to plan a DataSQRL pipeline or data catalog. Runs the DataSQRL agent in planning mode over a requirements document or a requirements string, producing a reviewable, checkbox-tracked adr/plan_<ts>.md. Takes an optional path to a requirements .md, or inline requirements text.
 argument-hint: <requirements text | path to a requirements .md>
 allowed-tools: Bash, Read, Skill
 ---
-Run the DataSQRL Code Agent in **planning** mode on the current project.
+Run the DataSQRL agent in **planning** mode on the current project.
 
 **Working directory**: run `datasqrl-agent.sh` in the project directory — the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to. `adr/` is resolved relative to that directory.
 

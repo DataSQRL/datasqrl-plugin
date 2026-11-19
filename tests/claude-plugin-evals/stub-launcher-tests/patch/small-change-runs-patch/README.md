@@ -1,6 +1,6 @@
 # patch-small-change-runs-patch
 
-Checks that a small, fully determined change goes to the `patch` skill, and that `patch` starts a patch run of the DataSQRL Code Agent.
+Checks that a small, fully determined change goes to the `patch` skill, and that `patch` starts a patch run of the DataSQRL agent.
 
 This case runs with the stub launcher. Run it with [run-stub-launcher-tests.sh](../../../run-stub-launcher-tests.sh), not with `claude plugin eval` on the repository.
 

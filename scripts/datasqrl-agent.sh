@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Run DataSQRL Code Agent with local or cloud MCP server.
+# Run DataSQRL agent with local or cloud MCP server.
 # Run this script from the workspace directory containing your DataSQRL project.
 #
 # Usage: ./datasqrl-agent.sh <requirements> [options...]
@@ -889,7 +889,7 @@ elif [ "${DATASQRL_AGENT_ALLOW_NO_GIT:-}" = "1" ]; then
     PROJECT_REL="."
     echo "Warning: not inside a git repository; DATASQRL_AGENT_ALLOW_NO_GIT=1 set, continuing with the current directory only." >&2
 else
-    echo "Error: the code agent must be run inside a git repository." >&2
+    echo "Error: the DataSQRL agent must be run inside a git repository." >&2
     echo "" >&2
     echo "The repository is what lets the agent discover sibling SQRL projects and shared data" >&2
     echo "catalogs, and it is mounted read-only so nothing outside your project can be modified." >&2

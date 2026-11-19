@@ -1,6 +1,6 @@
 {
   "name": "datasqrl",
-  "description": "Build DataSQRL data pipelines from your coding agent, using the Dockerized DataSQRL Code Agent.",
+  "description": "DataSQRL plugins for coding agents: agentic data engineering for operational data.",
   "owner": {
     "name": "DataSQRL",
     "email": "contact@datasqrl.com",
@@ -10,7 +10,7 @@
     {
       "name": "datasqrl",
       "source": "./",
-      "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent."
+      "description": "Agentic data engineering for operational data: plan, build, and verify real-time pipelines, data APIs, and data products with DataSQRL."
     }
   ]
 }
