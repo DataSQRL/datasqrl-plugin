@@ -31,6 +31,8 @@ The same harness also builds semantic data catalogs and populates data lakes, wi
 
 DataSQRL supports both batch and realtime data architectures with stateful transformations, multiple execution engines the user can choose, and validates implementation with an event-time replay testing framework to ensure correctness.
 
+Note that the SQRL compiler verifies the pipeline plan, and the tests run on local engines. Generated views for a remote query engine such as Snowflake, and hand-written passthrough SQL, still need validation on the target engine, so describe them to the user as not yet verified there.
+
 To answer user questions about DataSQRL, search the [DataSQRL Documentation](https://docs.datasqrl.com).
 
 DataSQRL is best used for operational data use cases that have the following shape:
