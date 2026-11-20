@@ -1,4 +1,4 @@
-# Setting up the DataSQRL Code Agent
+# Setting up the DataSQRL agent
 
 Read this when the user asks which edition, provider or model a run uses, how to change them, or what a provider needs, and when `--image-exists`, `--pull-image`, `--check-config` or any run like `--mode planning`, `--mode implementation` reports a problem.
 
@@ -6,7 +6,12 @@ Every command below runs `datasqrl-agent.sh`, the script that starts the agent's
 
 ## Edition: which image runs
 
-The agent ships as two images. The open-source edition is public, and anyone can pull it. The pro edition is private, and DataSQRL decides who can pull it.
+The DataSQRL agent ships as two images, one for each edition:
+
+- The open-source edition is the **advanced agent**, image `ghcr.io/datasqrl/adv-agent`. It is open source and public, and anyone can pull it.
+- The pro edition is the **pro agent**, image `ghcr.io/datasqrl/pro-agent`. It is the commercial offering: the advanced agent plus enterprise features. It is not open source. The image is private, and DataSQRL decides who can pull it.
+
+When the user asks which agent is open source, the answer is the advanced agent only.
 
 `datasqrl-agent.sh` picks the edition by the first rule that matches:
 

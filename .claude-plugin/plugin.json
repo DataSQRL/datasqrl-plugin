@@ -1,8 +1,8 @@
 {
   "name": "datasqrl",
   "displayName": "DataSQRL",
-  "version": "0.4.0",
-  "description": "Plan and implement DataSQRL data pipelines with the Dockerized DataSQRL Code Agent.",
+  "version": "0.4.1",
+  "description": "Agentic data engineering for operational data: plan, build, and verify real-time pipelines, data APIs, and data products with DataSQRL.",
   "author": {
     "name": "DataSQRL",
     "email": "contact@datasqrl.com",
@@ -17,7 +17,14 @@
     "data-pipelines",
     "streaming",
     "flink",
-    "graphql"
+    "graphql",
+    "operational-data",
+    "real-time",
+    "kafka",
+    "iceberg",
+    "data-api",
+    "mcp",
+    "data-products"
   ],
   "mcpServers": {
     "datasqrl": {
