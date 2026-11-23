@@ -3,7 +3,13 @@
 Each image is a file under FAKE_DOCKER_DIR: `registry/` holds what `docker pull` can fetch and
 `images/` holds what is local. A file's four lines are the image's edition label, its version
 label, its repo digests and its image ID, so `docker tag` copies them and `docker image inspect -f`
-reads them back.
+reads them back. As in Docker, `docker image inspect` and `docker tag` also find a local image by its
+ID. An untagged image is a file named after its ID.
+
+With FAKE_ENGINE_PAUSED set, the fake acts like Docker Desktop in Resource Saver mode: its cache
+answers "No such image" for a short name such as `adv-agent:latest` until a lookup by a ghcr.io name
+starts the engine, which writes FAKE_DOCKER_DIR/engine_started. A `docker tag` fails with
+FAKE_TAG_ERROR when that is set.
 
 A `docker pull` fails with FAKE_PULL_ERROR when that is set, as when ghcr.io refuses the login
 that Docker sent. A `docker run` of the cosign image is the signature check. It passes when the checked digest is
@@ -29,14 +35,32 @@ LAUNCHER = Path(__file__).resolve().parents[3] / "scripts" / "datasqrl-agent.sh"
 SHIM = r"""#!/bin/sh
 D="$FAKE_DOCKER_DIR"
 key() { printf '%s' "$1" | tr '/:' '__'; }
+# Prints the file of the local image that $1 names, by name or by image ID.
+find_image() {
+  f="$D/images/$(key "$1")"
+  if [ -f "$f" ]; then printf '%s' "$f"; return 0; fi
+  case "$1" in
+    sha256:*)
+      for f in "$D"/images/*; do
+        [ -f "$f" ] && [ "$(sed -n 4p "$f")" = "$1" ] && { printf '%s' "$f"; return 0; }
+      done ;;
+  esac
+  return 1
+}
 printf '%s\n' "$*" >> "$D/calls"
 case "$1" in
   image)
     shift 2
     fmt=""
     if [ "$1" = "-f" ]; then fmt="$2"; shift 2; fi
-    f="$D/images/$(key "$1")"
-    [ -f "$f" ] || exit 1
+    if [ -n "${FAKE_ENGINE_PAUSED:-}" ] && [ ! -f "$D/engine_started" ]; then
+      case "$1" in
+        */*) touch "$D/engine_started" ;;
+        sha256:*) ;;
+        *) echo "Error response from daemon: No such image: $1" >&2; exit 1 ;;
+      esac
+    fi
+    f="$(find_image "$1")" || exit 1
     case "$fmt" in
       *com.datasqrl.edition*)             sed -n 1p "$f" ;;
       *org.opencontainers.image.version*) sed -n 2p "$f" ;;
@@ -51,7 +75,9 @@ case "$1" in
     echo "Status: Downloaded newer image for $2"
     cp "$f" "$D/images/$(key "$2")"; exit 0 ;;
   tag)
-    cp "$D/images/$(key "$2")" "$D/images/$(key "$3")"; exit $? ;;
+    if [ -n "${FAKE_TAG_ERROR:-}" ]; then echo "$FAKE_TAG_ERROR" >&2; exit 1; fi
+    f="$(find_image "$2")" || exit 1
+    cp "$f" "$D/images/$(key "$3")"; exit $? ;;
   rmi)
     rm -f "$D/images/$(key "$2")"; exit 0 ;;
   login)
@@ -237,6 +263,18 @@ def have_local(fake: Path, name: str, edition: str, version: str = "1.0.5",
         record.parent.mkdir(parents=True, exist_ok=True)
         with record.open("a") as record_file:
             record_file.write(image_id(name) + "\n")
+
+
+def have_untagged(fake: Path, name: str, edition: str, version: str = "1.0.5",
+                  checked: bool = True) -> None:
+    """A local image that has lost every tag, so only its ID finds it. `name` gives it its ID."""
+    untagged_id = image_id(name)
+    (fake / "images" / _key(untagged_id)).write_text(f"{edition}\n{version}\n\n{untagged_id}\n")
+    if checked:
+        record = verified_images_file(fake)
+        record.parent.mkdir(parents=True, exist_ok=True)
+        with record.open("a") as record_file:
+            record_file.write(untagged_id + "\n")
 
 
 def have_cosign_local(fake: Path) -> None:
