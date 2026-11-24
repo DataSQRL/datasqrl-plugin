@@ -1,6 +1,6 @@
 {
   "name": "datasqrl",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Agentic data engineering for operational data: plan, build, and verify real-time pipelines, data APIs, and data products with DataSQRL.",
   "author": {
     "name": "DataSQRL",

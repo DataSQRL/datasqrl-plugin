@@ -39,7 +39,7 @@
 #                   Status READY or NOT READY; exits 0 or 1. Never pulls, never prints a value.
 #
 # The image flags work in any directory. --pull-image and --image-exists take no other argument. The edition is os unless
-# DATASQRL_AGENT_EDITION=pro, DATASQRL_PRO_TOKEN is set, or pro-agent:latest is already exist.
+# DATASQRL_AGENT_EDITION=pro, DATASQRL_PRO_TOKEN is set, or a checked pro image is already local.
 # The pro image and its signature are private, so every pro pull needs a ghcr.io login from a
 # GitHub account with pro access: DATASQRL_PRO_TOKEN, a GitHub token with read:packages, or else
 # the ghcr.io login that `docker login ghcr.io` stored.
@@ -118,14 +118,13 @@ trap remove_paths_on_exit EXIT
 # Sets RUN_EDITION, REGISTRY_IMAGE and LOCAL_IMAGE. The first rule that matches wins:
 #   1. DATASQRL_AGENT_EDITION, when set
 #   2. pro, when DATASQRL_PRO_TOKEN is set
-#   3. pro, when the pro image is already local (a user who has both runs pro)
+#   3. pro, when a checked pro image is already local (a user who has both runs pro)
 #   4. os
 resolve_edition() {
     case "${DATASQRL_AGENT_EDITION:-}" in
         os|pro) RUN_EDITION="$DATASQRL_AGENT_EDITION" ;;
         "")
-            if [ -n "${DATASQRL_PRO_TOKEN:-}" ] \
-               || docker image inspect "$PRO_LOCAL_IMAGE" >/dev/null 2>&1; then
+            if [ -n "${DATASQRL_PRO_TOKEN:-}" ] || find_local_image pro; then
                 RUN_EDITION="pro"
             else
                 RUN_EDITION="os"
@@ -264,6 +263,44 @@ record_verified_image() {
     if ! { mkdir -p "$LAUNCHER_STATE_DIR" && printf '%s\n' "$1" >> "$VERIFIED_IMAGES_FILE"; } 2>/dev/null; then
         echo "Warning: could not write $VERIFIED_IMAGES_FILE, so the next run checks this image again." >&2
     fi
+}
+
+# Prints the ID of the newest local image in verified-images whose edition label is $1.
+newest_verified_image_of_edition() {
+    local _verified_image_id
+    [ -f "$VERIFIED_IMAGES_FILE" ] || return 1
+    while IFS= read -r _verified_image_id; do
+        if [ "$(image_label "$_verified_image_id" com.datasqrl.edition)" = "$1" ]; then
+            printf '%s\n' "$_verified_image_id"
+            return 0
+        fi
+    done < <(awk '{ lines[NR] = $0 } END { for (i = NR; i > 0; i--) print lines[i] }' "$VERIFIED_IMAGES_FILE")
+    return 1
+}
+
+# Exit 0 when the local tag of edition $1 resolves. While Docker Desktop's Resource Saver stops the
+# engine, its cache can answer "No such image" for that tag although the image is local. A lookup by
+# the ghcr.io name starts the engine, so the tag is asked for again. A lost tag goes back on the
+# checked image under the ghcr.io name, or else on the newest checked image of that edition.
+find_local_image() {
+    local _local_image _registry_image _registry_image_id _found_image_id
+    if [ "$1" = "pro" ]; then
+        _local_image="$PRO_LOCAL_IMAGE"
+        _registry_image="$PRO_REGISTRY_IMAGE"
+    else
+        _local_image="$OS_LOCAL_IMAGE"
+        _registry_image="$OS_REGISTRY_IMAGE"
+    fi
+    docker image inspect "$_local_image" >/dev/null 2>&1 && return 0
+    _registry_image_id="$(docker image inspect -f '{{.Id}}' "$_registry_image" 2>/dev/null)"
+    docker image inspect "$_local_image" >/dev/null 2>&1 && return 0
+    if is_verified_image "$_registry_image_id"; then
+        _found_image_id="$_registry_image_id"
+    else
+        _found_image_id="$(newest_verified_image_of_edition "$1")" || return 1
+    fi
+    docker tag "$_found_image_id" "$_local_image" >/dev/null 2>&1 || return 1
+    echo "Docker did not resolve $_local_image, so the launcher tagged the checked image $_found_image_id with it again." >&2
 }
 
 # Prints the digest that `docker pull` recorded for $1, a registry image such as
@@ -479,7 +516,7 @@ select_checked_image() {
     fi
     resolve_edition
     IMAGE_NAME="$LOCAL_IMAGE"
-    if docker image inspect "$LOCAL_IMAGE" >/dev/null 2>&1; then
+    if find_local_image "$RUN_EDITION"; then
         _id="$(docker image inspect -f '{{.Id}}' "$LOCAL_IMAGE" 2>/dev/null)"
         if is_verified_image "$_id"; then
             RUN_IMAGE="$_id"
@@ -538,6 +575,7 @@ do_image_exists() {
     else
         resolve_edition
         _img="$LOCAL_IMAGE"; _what="$LOCAL_IMAGE ($RUN_EDITION edition)"
+        find_local_image "$RUN_EDITION"
     fi
     if docker image inspect "$_img" >/dev/null 2>&1; then
         if [ -z "${DATASQRL_AGENT_IMAGE:-}" ] \
