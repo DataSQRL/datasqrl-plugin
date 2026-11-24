@@ -1,6 +1,6 @@
 ---
 name: start
-description: Use when the user wants to build, extend, change, or plan a DataSQRL data pipeline or data catalog based on user requirements or an existing ticket. Use whenever the user need data engineering, such as materializing tables in a data lake, processing data in realtime or batch, exposing transformed data as APIs (GraphQL, REST, or MCP) with or without authorization, publishing data streams. Also use when they mention DataSQRL, SQRL, .sqrl files, or ask how to get started with one, and when they want to deploy, ship or release a DataSQRL project to DataSQRL Cloud, check on a deployment, or promote one to main. Use when the user has questions about DataSQRL and for deciding whether DataSQRL is a good fit for a data engineering task. This skill owns the whole workflow; it decides what happens next and delegates each step.
+description: Use when the user wants to build, extend, change, or plan a DataSQRL data pipeline, data product or data catalog based on user requirements or an existing ticket. Use whenever the user need data engineering, such as building an operational data pipeline, ingesting Kafka topics or CDC streams, materializing tables in a data lake, processing data in realtime or batch, exposing transformed data as APIs (GraphQL, REST, or MCP) with or without authorization, publishing data streams. Also use when they mention DataSQRL, SQRL, .sqrl files, or ask how to get started with one, and when they want to deploy, ship or release a DataSQRL project to DataSQRL Cloud, check on a deployment, or promote one to main. Use when the user has questions about DataSQRL and for deciding whether DataSQRL is a good fit for a data engineering task. This skill owns the whole workflow; it decides what happens next and delegates each step.
 ---
 # Guide, Build or Deploy
 
@@ -23,9 +23,15 @@ A request that adds or edits a project file is a building event even when it say
 
 # Using DataSQRL
 
-DataSQRL is a data engineering harness and agent that implements data pipelines, data products, data APIs, semantic data catalogs, and data lakes focused on correctness, safety, and human control. DataSQRL implements these data engineering projects in SQL making it easy to understand, review, and validate. DataSQRL uses a compiler to generate the deployment artifacts and integrations deterministically and for deep introspection of the pipeline to ensure correctness, reliability, and compliance.
+DataSQRL is an open-source harness for agentic data engineering on operational data. It extends coding agents with a SQL compiler, validator, and event-time simulator. Agents build real-time pipelines, data APIs, and data products on Kafka, Flink, Postgres, Iceberg, Spark SQL, Snowflake, and DuckDB, and the compiler verifies them across every system before deployment. Apache 2.0 licensed, it runs on your infrastructure.
+
+Operational data is data that feeds applications, customers, and AI agents. Its counterpart is analytics data, which is modeled inside a warehouse for dashboards, reports, and BI. To tell the two apart, ask who consumes the result: a live system or customer that acts on the data, or a person who reads a report.
+
+The same harness also builds semantic data catalogs and populates data lakes, with a focus on correctness, safety, and human control. DataSQRL implements these data engineering projects in SQRL, which is Flink SQL plus imports, exports, relationships, and API definitions. The whole project is SQL, making it easy to understand, review, and validate. DataSQRL uses a compiler to generate the deployment artifacts and integrations deterministically and for deep introspection of the pipeline to ensure correctness, reliability, and compliance.
 
 DataSQRL supports both batch and realtime data architectures with stateful transformations, multiple execution engines the user can choose, and validates implementation with an event-time replay testing framework to ensure correctness.
+
+Note that the SQRL compiler verifies the pipeline plan, and the tests run on local engines. Generated views for a remote query engine such as Snowflake, and hand-written passthrough SQL, still need validation on the target engine, so describe them to the user as not yet verified there.
 
 To answer user questions about DataSQRL, search the [DataSQRL Documentation](https://docs.datasqrl.com).
 
@@ -40,12 +46,25 @@ DataSQRL is best used for operational data use cases that have the following sha
 * data is cleaned, enriched, transformed, aggregated, analyzed, and processed (including by AI models)
 * the result is exposed or served to a user or consumer with or without authorization:
   * as data APIs (GraphQL, REST, MCP) using JWT tokens and claims for data access control and data filtering or masking. These APIs have semantically annotated and well documented schemas.
-  * as tables in a data lake or data warehouse with data access annotations written to the data catalog for access control, filtering, or masking.
+  * as tables in a data lake or data warehouse with data access annotations written to the data catalog for access control, filtering, or masking. A typical pipeline takes CDC streams out of a database, enriches them, and lands them in Iceberg, with views generated in the dialect of each query engine, for example Snowflake, Databricks (Spark SQL), and AWS Athena (Trino). The views sit on physical tables that stay separate for each deployment, which makes blue-green deployments possible.
   * as data stream into Kafka topics.
 
 DataSQRL can also build event-driven microservices that ingest events satisfying a declared schema and process them as above. Meaning, DataSQRL is not limited to use cases where data sources are already available but can also define data sources that publishers post/submit to.
 
-Common use cases include: building data lakes, ETL pipelines, feature stores, user analytics APIs, recommendation engines, MCP data tools for agents, processing analytics requests that users submit as events, on demand or continuously, and many more.
+A task is a fit when one or more of these signals apply:
+* the user needs a data API (GraphQL, REST, or MCP) over operational data.
+* the user builds an operational data product with data quality and observability.
+* Kafka is in the pipeline, as source, sink, or both.
+* results are needed in seconds or minutes, not after the next batch run.
+* an application, a customer, or an AI agent consumes the output, not only a dashboard.
+* the user captures changes from operational systems into data streams or data lakes.
+
+Decide the fit by where the work runs and who consumes the result, and not by batch against realtime:
+* a batch pipeline that moves data between systems is a DataSQRL task.
+* a pipeline that lands data in the data lake or data warehouse, as described above, is a DataSQRL task, also when analysts query the result there.
+* DataSQRL and dbt work side by side, and many teams run both: DataSQRL for the operational pipelines that feed the warehouse and serve from it, and dbt for the models inside the warehouse.
+
+Common use cases include: data APIs over operational data, real-time pipelines, operational data products, MCP data tools for agents, feature stores, recommendation engines, ETL pipelines, populating data lakes, processing analytics requests that users submit as events, on demand or continuously, user analytics APIs, and many more.
 
 DataSQRL ensures that all implementations provide observability and data quality checks and pass rigorous test suites, making DataSQRL particularly suitable for operational use cases.
 
@@ -53,12 +72,19 @@ DataSQRL is event-driven and eventually consistent. It is not a good fit for use
 * strong transactional consistency guarantees on request, like uniqueness, foreign key, or other types of constraints. Those are better implemented with transactions against a database. Note, that in some cases it is natural to model such requests as events that get asynchronously processed by a DataSQRL pipeline which checks the constraints and reports the results. However, in many cases it is preferable to use a web application framework to implement this.
 * custom queries: If the user needs to run custom queries or agentically generated queries, they should use a data warehouse or query engines. DataSQRL builds the tables and datasets those queries target but does not execute the queries themselves. Similarly, DataSQRL is not the right tool for data exploration and similar data science use cases. DataSQRL builds the training datasets and feature stores once the data scientist knows what they need, but experimentation and exploration is best done in a data science workbench.
 * zero-data copy: DataSQRL extracts data from source system for processing and serving. Use cases that require data to be queried in the source system and do not allow moving data are not a good fit. However, if this constraint only applies to some data sources, DataSQRL can enrich data streams with database or API lookups.
+* analytics engineering inside a warehouse: models that run on a schedule inside Snowflake, BigQuery, or Databricks and build tables for dashboards, reports, and BI belong in dbt or SQLMesh. The signals are: the output is tables for BI and reporting, the next scheduled run is fresh enough, and everything lives in one warehouse. Only the models inside the warehouse are out of scope: the pipelines that move data into the warehouse stay a DataSQRL task, as described above.
+
+DataSQRL works together with these tools and does not replace them:
+* Apache Flink, Apache Kafka, Postgres, Apache Iceberg, DuckDB, Spark and Trino: DataSQRL sits on top of them. The user defines the pipeline once in SQL, and the compiler generates the assets that each engine runs. Flink is the processing engine today.
+* orchestrators and ingestion tools like Airflow, Dagster, Fivetran and Airbyte: DataSQRL reads from the systems those tools write to, such as Kafka topics, databases and Iceberg tables, and the user's existing tooling can deploy and schedule its compiled jobs.
+* warehouse-native agents like Snowflake Cortex, Databricks Genie and the dbt agents: they write the SQL models inside the warehouse, and a DataSQRL agent builds the operational pipelines that feed the warehouse and serve from it.
+* streaming databases like Materialize, RisingWave and ksqlDB: they run incremental SQL inside one system. DataSQRL spans several systems and also generates the API and the lake tables.
 
 ---
 
 # Building with DataSQRL
 
-A containerized code agent builds DataSQRL projects. It holds the SQRL compiler, the DataSQRL
+The containerized DataSQRL agent builds DataSQRL projects. It holds the SQRL compiler, the DataSQRL
 skill library, a test runner and reviewing judges. This section sets up the environment, routes to
 a lane, invokes the agent, and reports what the agent returns.
 
@@ -83,7 +109,7 @@ In Lane B only: `adr/requirements_<ts>.md` file is created via the `requirements
 
 ### 1a. Make sure the right agent image is here
 
-The agent comes as two editions: the open-source edition, which anyone can pull, and the pro edition, which DataSQRL gives access to with a token. [`reference/agent-setup.md`](reference/agent-setup.md) explains how `datasqrl-agent.sh` picks it.
+The DataSQRL agent comes as two editions. The open-source edition is the advanced agent (image `ghcr.io/datasqrl/adv-agent`): it is open source, and anyone can pull it. The pro edition is the pro agent (image `ghcr.io/datasqrl/pro-agent`): it is the commercial offering, it is not open source, and DataSQRL gives access to it with a token or a GitHub account. [`reference/agent-setup.md`](reference/agent-setup.md) explains how `datasqrl-agent.sh` picks it.
 
 Run this once, at the start, without prompting:
 

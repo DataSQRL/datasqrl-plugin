@@ -1,12 +1,12 @@
 ---
 name: resolve-issue
-description: Use when the user wants a GitHub issue on a DataSQRL project resolved, fixed or implemented - they give an issue URL or number, or refer to an issue the DataSQRL Cloud assistant filed. Reads the issue, runs the DataSQRL Code Agent over it from the project's directory in the lane the fix needs, and hands them the commit message that closes the issue.
+description: Use when the user wants a GitHub issue on a DataSQRL project resolved, fixed or implemented - they give an issue URL or number, or refer to an issue the DataSQRL Cloud assistant filed. Reads the issue, runs the DataSQRL agent over it from the project's directory in the lane the fix needs, and hands them the commit message that closes the issue.
 argument-hint: "<issue URL | issue number>"
 allowed-tools: Bash, Read, Write, Skill
 ---
 # Resolve a GitHub issue
 
-Turns a GitHub issue into a DataSQRL Code Agent run on the project it is about.
+Turns a GitHub issue into a DataSQRL agent run on the project it is about.
 
 Issues filed by the DataSQRL Cloud assistant report a defect in the user's project: actual and expected behavior, evidence, where it surfaces and acceptance criteria. They stop at the evidence, because deciding the fix is the agent's work. Below the report, after a `---` line, the platform appends a footer naming the requester, the project and its directory in the repository.
 

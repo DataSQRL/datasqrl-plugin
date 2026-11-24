@@ -1,10 +1,10 @@
 ---
 name: patch
-description: Use for a small, well-scoped change to an existing DataSQRL project. Runs the DataSQRL Code Agent in patch mode, which implements the requested changes, updates the tests and documentation they affect, runs the tests and refines if tests fail. Patch mode is not for anything complex or requiring large updates.
+description: Use for a small, well-scoped change to an existing DataSQRL project. Runs the DataSQRL agent in patch mode, which implements the requested changes, updates the tests and documentation they affect, runs the tests and refines if tests fail. Patch mode is not for anything complex or requiring large updates.
 argument-hint: "<what to change>"
 allowed-tools: Bash, Read
 ---
-Run the DataSQRL Code Agent in **patch** mode on the current project: the request goes straight to the implementing agent, which makes the change, updates and run the tests, updates what the change breaks, gets one round to fix what it catches, and updates the documentation.
+Run the DataSQRL agent in **patch** mode on the current project: the request goes straight to the implementing agent, which makes the change, updates and run the tests, updates what the change breaks, gets one round to fix what it catches, and updates the documentation.
 
 No planning stage, no judge panel, one round to fix whatever the tests catch.
 

@@ -1,10 +1,10 @@
 ---
 name: implement
-description: Use when the user has reviewed a DataSQRL plan and explicitly approved implementing it - for example by saying it looks good, to go ahead, or to implement it. Runs the DataSQRL Code Agent in implementation mode over that plan, the full autonomous implement, compile, test, verify and refine loop.
+description: Use when the user has reviewed a DataSQRL plan and explicitly approved implementing it - for example by saying it looks good, to go ahead, or to implement it. Runs the DataSQRL agent in implementation mode over that plan, the full autonomous implement, compile, test, verify and refine loop.
 argument-hint: "[optional path to a plan_*.md]"
 allowed-tools: Bash, Read, Skill
 ---
-Run the DataSQRL Code Agent in **implementation** mode (implement → compile → test → verify → refine) on the current project.
+Run the DataSQRL agent in **implementation** mode (implement → compile → test → verify → refine) on the current project.
 
 **Working directory**: run `datasqrl-agent.sh` in the project directory — the one containing the `adr` subfolder and the project implementation files. The command mounts the entire repository for the agent to read, and the invocation directory is the only one it writes to. `adr/plan_*.md` is discovered relative to that directory.
 

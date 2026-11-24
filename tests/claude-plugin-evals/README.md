@@ -125,6 +125,8 @@ Each case folder has a `README.md` with the setup, the prompt, the graders and t
 | [requirements/records-user-hard-constraint](skill-specific-tests/requirements/records-user-hard-constraint/README.md) | The skill writes the model that the user requires under `## Hard constraints`, with the user's reason |
 | [start/custom-queries-not-a-fit](skill-specific-tests/start/custom-queries-not-a-fit/README.md) | The skill says that DataSQRL does not run ad hoc queries |
 | [start/tenant-api-is-a-fit](skill-specific-tests/start/tenant-api-is-a-fit/README.md) | The skill says that DataSQRL fits a per-customer API with JWT claims |
+| [start/dbt-models-not-a-fit](skill-specific-tests/start/dbt-models-not-a-fit/README.md) | The skill says that scheduled models inside a warehouse belong in dbt or SQLMesh |
+| [start/warehouse-landing-is-a-fit](skill-specific-tests/start/warehouse-landing-is-a-fit/README.md) | The skill says that DataSQRL fits CDC into Iceberg with access from Snowflake |
 | [patch/small-change-runs-patch](stub-launcher-tests/patch/small-change-runs-patch/README.md) (stub launcher) | A small change goes to the `patch` skill, which calls the launcher with `--mode patch --detach` and reports the run |
 
 ## Starting a prompt with `/datasqrl:<skill-name>`
@@ -281,7 +283,7 @@ A stub for `datasqrl-cloud.sh` would need canned answers for each DataSQRL Cloud
 
 ## Limits
 
-- **No Docker and no network.** The sandbox blocks both. The [stub launcher](#stub-launcher) covers the skills that call `datasqrl-agent.sh`, but it does not test the Code Agent itself. No case covers `deploy` and `promote`. See [Bash in a run](#bash-in-a-run).
+- **No Docker and no network.** The sandbox blocks both. The [stub launcher](#stub-launcher) covers the skills that call `datasqrl-agent.sh`, but it does not test the DataSQRL agent itself. No case covers `deploy` and `promote`. See [Bash in a run](#bash-in-a-run).
 - **One user message.** A run ends at the first question to the user, and the graders grade that question. A case that needs the user's answer needs a recorded conversation in `context.history_file`.
 - **No clock.** The cases do not grant Bash, so the agent cannot read the time. The time in `requirements_<timestamp>.md` is a placeholder.
 - **Different results between runs.** An `llm` judge votes three times, and the agent's reply changes from run to run. Use `--threshold 0.8` and 3 runs for each case.
